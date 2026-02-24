@@ -1,0 +1,24 @@
+__pycache__/
+*.py[cod]
+*.pyo
+*.pyd
+
+.Python
+env/
+venv/
+.venv/
+
+.DS_Store
+Thumbs.db
+
+.vscode/
+.idea/
+
+.pytest_cache/
+.mypy_cache/
+
+.env
+
+# Streamlit
+.streamlit/secrets.toml
+
