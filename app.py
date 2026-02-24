@@ -1,5 +1,5 @@
 import os
-from typing import List, Dict, Any
+from typing import Any, Dict, List
 
 import pandas as pd
 import requests
@@ -7,20 +7,33 @@ import streamlit as st
 from dotenv import load_dotenv
 
 
-TIANXING_DOUYIN_HOT_URL = "https://apis.tianapi.com/douyinhot/index"
+TIANAPI_DOUYIN_HOT_URL = "https://apis.tianapi.com/douyinhot/index"
 
 
 def load_env_defaults() -> Dict[str, str]:
     """
-    Load default API keys from environment variables / .env.
+    Load default API keys from Streamlit secrets or environment variables / .env.
     Users can still override them in the sidebar.
     """
     load_dotenv()
+
+    # 优先从 Streamlit secrets 读取，其次从环境变量读取
+    def _get_default(name: str) -> str:
+        if name in st.secrets:
+            value = str(st.secrets[name])
+            if value:
+                return value
+        return os.getenv(name, "")
+
     return {
-        "doubao": os.getenv("DOUBAO_API_KEY", ""),
-        "deepseek": os.getenv("DEEPSEEK_API_KEY", ""),
-        "kling": os.getenv("KLING_API_KEY", ""),
-        "tianxing": os.getenv("TIANXING_API_KEY", ""),
+        # Doubao / Ark 大模型
+        "doubao": _get_default("ARK_API_KEY"),
+        # DeepSeek 提示词优化
+        "deepseek": _get_default("DEEPSEEK_API_KEY"),
+        # Kling 视频生成
+        "kling": _get_default("KLING_ACCESS_KEY"),
+        # TianAPI 抖音热榜
+        "tianxing": _get_default("TIANAPI_KEY"),
     }
 
 
@@ -35,7 +48,7 @@ def fetch_douyin_hot(api_key: str, top_n: int = 10) -> pd.DataFrame:
 
     try:
         resp = requests.get(
-            TIANXING_DOUYIN_HOT_URL,
+            TIANAPI_DOUYIN_HOT_URL,
             params={"key": api_key},
             timeout=10,
         )
@@ -104,8 +117,9 @@ def main() -> None:
         st.markdown("---")
         st.caption(
             "提示：可以将以上密钥写入项目根目录的 `.env` 文件，"
-            "变量名分别为 `DOUBAO_API_KEY`、`DEEPSEEK_API_KEY`、"
-            "`KLING_API_KEY`、`TIANXING_API_KEY`，应用会自动读取。"
+            "变量名分别为 `ARK_API_KEY`、`DEEPSEEK_API_KEY`、"
+            "`KLING_ACCESS_KEY`、`TIANAPI_KEY`，应用会自动读取；"
+            "或在 `.streamlit/secrets.toml` 中配置同名字段。"
         )
 
     # Main page: Douyin/TikTok trending topics table

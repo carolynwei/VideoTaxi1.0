@@ -1,5 +1,7 @@
 from pprint import pprint
 
+from dotenv import load_dotenv
+
 from utils.api_clients import (
     ArkAPIError,
     TianAPIError,
@@ -9,6 +11,8 @@ from utils.api_clients import (
 
 
 def main() -> None:
+    load_dotenv()
+
     try:
         # 1. 获取抖音热榜 Top 1
         trends = get_douyin_hot_trends(limit=1)
