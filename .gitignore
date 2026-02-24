@@ -22,3 +22,5 @@ Thumbs.db
 # Streamlit
 .streamlit/secrets.toml
 
+/test.py
+/test2.py
