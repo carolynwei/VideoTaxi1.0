@@ -24,3 +24,7 @@ Thumbs.db
 
 /test.py
 /test2.py
+
+.venv/
+__pycache__/
+*.pyc
