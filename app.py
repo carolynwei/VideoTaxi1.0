@@ -73,6 +73,8 @@ def _ensure_session_state() -> None:
         st.session_state["hot_trends"] = []
     if "selected_topic" not in st.session_state:
         st.session_state["selected_topic"] = ""
+    if "hot_page" not in st.session_state:
+        st.session_state["hot_page"] = 0
     if "final_video_path" not in st.session_state:
         st.session_state["final_video_path"] = ""
     if "last_script" not in st.session_state:
@@ -834,17 +836,16 @@ def main() -> None:
             <div class="api-key-panel">
               <div class="api-key-lock-row">
                 <div>
-                  <div class="api-key-title">① 填写 API Keys（必填）</div>
-                  <div class="api-key-subtitle">只用于直连官方大模型接口，本地可见，随时可删。</div>
+                  <div class="api-key-title">API Keys 配置</div>
+                  <div class="api-key-subtitle">用于调用各厂商官方大模型接口。</div>
                 </div>
                 <div class="api-key-lock-icon">🔒</div>
               </div>
               <div class="api-key-meta-row">
-                <span class="api-key-badge">本地运行</span>
-                <span class="api-key-badge api-key-badge-soft">请在信任当前环境时填写</span>
+                <span class="api-key-badge api-key-badge-soft">请在受信任的本地环境中填写</span>
               </div>
               <div class="api-key-hint">
-                建议先用测试额度体验，确认流程无误后，再换成正式生产 Key。
+                建议先使用测试配额验证流程，确认无误后再替换为正式 Key。
               </div>
             </div>
             """,
@@ -976,6 +977,8 @@ def main() -> None:
                     st.error(f"抖音热榜失败：{exc}")
                     trends = []
                 st.session_state["hot_trends"] = trends
+                # 每次重新拉取热榜时，从第一页开始展示
+                st.session_state["hot_page"] = 0
 
     hot_trends: List[Dict[str, Any]] = st.session_state.get("hot_trends") or []
 
@@ -993,26 +996,79 @@ def main() -> None:
                 """,
                 unsafe_allow_html=True,
             )
-            df = pd.DataFrame(hot_trends)
+
+            # 分页显示抖音热榜：每页最多 4 条，支持明显的上一页 / 下一页按钮
+            page_size = 4
+            total_items = len(hot_trends)
+            total_pages = (total_items + page_size - 1) // page_size
+
+            current_page = st.session_state.get("hot_page", 0)
+            if current_page < 0:
+                current_page = 0
+            if total_pages > 0 and current_page > total_pages - 1:
+                current_page = total_pages - 1
+            st.session_state["hot_page"] = current_page
+
+            start = current_page * page_size
+            end = min(start + page_size, total_items)
+            page_items = hot_trends[start:end]
+
+            df = pd.DataFrame(page_items)
             st.dataframe(df, width="stretch", hide_index=True)
             st.markdown("</div>", unsafe_allow_html=True)
 
-            titles = [item.get("title", "") for item in hot_trends]
+            # 分页信息与翻页按钮（做得更显眼一点）
+            if total_pages > 1:
+                st.markdown(
+                    f"**当前只展示 {page_size} 条，共 {total_items} 条热点 · 第 {current_page + 1} / {total_pages} 页**"
+                )
+                col_prev, col_next = st.columns(2)
+                with col_prev:
+                    if st.button("⬆ 上一页热点", key="hot_prev", disabled=current_page <= 0):
+                        st.session_state["hot_page"] = current_page - 1
+                        if hasattr(st, "rerun"):
+                            st.rerun()
+                        elif hasattr(st, "experimental_rerun"):  # pragma: no cover
+                            st.experimental_rerun()
+                with col_next:
+                    if st.button(
+                        "⬇ 下一页热点（查看更多）",
+                        key="hot_next",
+                        disabled=current_page >= total_pages - 1,
+                    ):
+                        st.session_state["hot_page"] = current_page + 1
+                        if hasattr(st, "rerun"):
+                            st.rerun()
+                        elif hasattr(st, "experimental_rerun"):  # pragma: no cover
+                            st.experimental_rerun()
+
+            # 下拉框仅展示当前页的 4 条话题，避免信息过载
+            titles = [item.get("title", "") for item in page_items]
             if titles:
+                previous_selected = st.session_state.get("selected_topic", "")
+                try:
+                    default_index = titles.index(previous_selected)
+                except ValueError:
+                    default_index = 0
+
                 selected_title = st.selectbox(
                     "选择本支视频的话题：",
                     options=titles,
-                    index=0,
+                    index=default_index,
                 )
                 st.session_state["selected_topic"] = selected_title
             else:
                 st.session_state["selected_topic"] = ""
 
+            # 额外提示当前已选中的话题，翻页时更直观
+            if st.session_state.get("selected_topic"):
+                st.caption(f"当前已选话题：{st.session_state['selected_topic']}")
+
     selected_topic: str = st.session_state.get("selected_topic", "") or ""
     st.markdown("---")
 
     # ---------- 步骤 2：一键生成视频 ----------
-    st.subheader("② 一键生成视频（只需点一次按钮）")
+    st.subheader("② 一键生成视频")
 
     # 让用户在生成前选择文生视频模型：MiniMax（推荐）或 Kling 多镜头
     st.markdown("**选择视频生成模型**")

@@ -619,7 +619,7 @@ def generate_video_script(topic: str, *, timeout: int = 90) -> Dict[str, Any]:
         # Kimi 场景：不做资料收集，只负责脑洞故事改编
         system_prompt = (
             "你是一名顶级的抖音爆款短视频编剧和视觉导演。你的任务是不做任何枯燥的资料收集，"
-            "直接将给定的【新闻热点话题】进行“脑洞化”或“平民化”的改编，虚构一个有趣、有张力且逻辑自洽的30秒短故事。\n\n"
+            "直接将给定的【新闻热点话题】进行“脑洞化”或“平民化”的改编，虚构一个有趣、有张力且逻辑自洽的 15～25 秒短故事，整体节奏略快、语言更精炼。\n\n"
             "【核心创作策略：如何把硬新闻变有趣？】\n"
             "遇到宏大抽象的新闻（如国际关系、金融、政策），你必须使用以下两种策略之一：\n"
             "1. 视觉隐喻（高概念）：例如“美收割虚拟货币”，不要写看新闻，而是写一个赛博朋克农场里，巨型外星收割机正在吸走地里的发光金币，小韭菜在一旁痛哭。\n"
@@ -631,13 +631,13 @@ def generate_video_script(topic: str, *, timeout: int = 90) -> Dict[str, Any]:
             "【输出格式】严格按下列 JSON 结构输出，且只输出 JSON，无额外说明或 Markdown：\n"
             "{\n"
             '  "title": "视频标题（要有网感，带点标题党）",\n'
-            '  "narration": "旁白文案（约30秒，极度口语化，多用短句、感叹句。吐槽或讲故事的口吻，绝不能像新闻播报）",\n'
+            '  "narration": "旁白文案（控制在约20秒内，极度口语化，多用短句、感叹句。吐槽或讲故事的口吻，避免重复堆砌同一句意思）",\n'
             '  "visual_scenes": ["画面要点1", "画面要点2", "画面要点3", "画面要点4", "画面要点5"],\n'
             '  "bgm_style": "搞笑/反转/悬疑/史诗"\n'
             "}\n\n"
             "【narration（旁白）的写法要求】\n"
-            "  - 必须是完整的配音文案，用句号、问号、感叹号清晰断句，每句 7～20 个字。\n"
-            "  - 旁白要负责把 5 个画面串起来，情绪起伏要大。\n\n"
+            "  - 必须是完整的配音文案，用句号、问号、感叹号清晰断句，每句 7～18 个字，尽量避免废话和长句。\n"
+            "  - 旁白要负责把 5 个画面串起来，情绪起伏要大，但整体语句精炼、有力度。\n\n"
             "【visual_scenes（画面）的致命约束（必须严格遵守）】\n"
             "  - 这是给AI视频模型（如可灵、MiniMax）的画面提示，所以描述必须是具体的【实体对象+动作+环境】！\n"
             "  - 绝对禁止出现：新闻演播室、主播、看手机屏幕、看报纸的无聊画面。\n"
@@ -952,24 +952,28 @@ def optimize_visual_prompt(chinese_scenes_list: List[str], *, temperature: float
         "- Example 1 (Crypto/Finance): Instead of 'A report about crypto', generate 'A glowing digital vault absorbing golden holographic coins from a futuristic fiber-optic network, high-tech macro shot.'\n"
         "- Example 2 (Exam Scores): Instead of 'Scores announced', generate 'Close-up of a nervous student's hands pressing a glowing keyboard in a dark room, cinematic dramatic lighting.'\n"
         "- Example 3 (Political Talks): Instead of 'Meeting', generate 'Two businessmen in sharp suits shaking hands in silhouette against a massive window overlooking a modern cyberpunk cityscape, slow motion.'\n\n"
+        "### 0. SPEED & KINETIC ENERGY (CRITICAL)\n"
+        "Since each video clip is only 6 seconds, you MUST prioritize FAST-PACED and HIGH-ENERGY actions. "
+        "Use verbs that imply speed and intensity such as: rushing, spinning rapidly, flicking, swiftly, bursting, slamming, snapping, dynamic transition. "
+        "Every shot must have a clear 'start-to-end' kinetic energy shift to prevent a slow-motion feel (for example: calm → sudden burst → impact within 6 seconds).\n"
+        "Within the 6-second window, design at least two distinct action beats or visual changes. "
+        "Explicitly use patterns like 'First ..., then ...' or 'While ..., ...' so that time feels compressed and eventful.\n\n"
         "### PROMPT FORMULA\n"
         "Construct EVERY prompt strictly using this flow:\n"
-        "[Camera Movement] + [Concrete Visual Metaphor / Subject] + [Environment & Depth] + [Cinematic Style & Lighting] + [Anti-Gibberish Constraints]\n\n"
-        
+        "[Camera Movement] + [Fast multi-stage Action] + [Concrete Visual Metaphor / Subject] + [Environment & Depth] + [Cinematic Style & Lighting] + [Anti-Gibberish Constraints]\n\n"
         "### 1. CAMERA & MOVEMENT (Dynamic & Premium)\n"
-        "- Force premium commercial camera movement: 'slow push-in', 'dynamic macro tracking shot', 'drone sweeping over', 'orbit around subject'.\n"
-        "- The movement must match the news tone (e.g., fast and dynamic for sports, slow and tense for politics).\n\n"
-        
+        "- Force premium commercial camera movement: 'fast dolly-in', 'quick zoom-out', 'hyper-lapse style movement', 'aggressive tracking shot', 'dynamic macro tracking shot', 'drone sweeping over', 'orbit around subject'.\n"
+        "- The camera should almost never be static; even subtle shots must include panning, pushing, orbiting, or reframing.\n"
+        "- The movement must match the news tone (e.g., fast and dynamic for sports, slow and tense but still kinetic for politics).\n"
+        "- When appropriate, explicitly mention 'high-energy cinematography' or 'fast-paced editing style'.\n\n"
         "### 2. AESTHETICS BY CATEGORY\n"
         "- Tech/Finance: 'Futuristic, holographic glowing data streams, neon blue and gold lighting, sharp focus, 8k resolution, commercial macro photography.'\n"
         "- Sports (e.g., Basketball): 'High-contrast stadium lighting, sweat dripping, extreme slow motion, dynamic action, cinematic sports broadcast style.'\n"
         "- Politics/Economy: 'Serious moody lighting, shallow depth of field, sharp silhouettes, highly professional documentary style.'\n\n"
-        
         "### 3. ANTI-TEXT & PURITY RULES (STRICT STRICT STRICT)\n"
         "- ABSOLUTELY NO readable text, signs, logos, chyrons, or captions.\n"
         "- NO newsroom desks or TV screens displaying text.\n"
         "- MUST append this exact negative constraint at the end of EVERY prompt: 'clean uncluttered background, devoid of typography, no text overlays, no random symbols, no visual noise, highly detailed.'\n\n"
-        
         "### OUTPUT FORMAT\n"
         "- Return ONLY a valid JSON array of strings.\n"
         "- Exactly one string per input scene, preserving the original order.\n"

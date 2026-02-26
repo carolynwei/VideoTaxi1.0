@@ -185,7 +185,8 @@ def _make_subtitles_clip(
             raise RuntimeError("PIL 或 ImageClip 不可用")
 
         try:
-            font = ImageFont.truetype(subtitle_font, 64)
+            # 字幕字体稍微缩小一档，避免过于占画面
+            font = ImageFont.truetype(subtitle_font, 52)
         except Exception:
             font = ImageFont.load_default()
 
