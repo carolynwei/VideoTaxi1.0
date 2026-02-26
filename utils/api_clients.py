@@ -113,6 +113,7 @@ def fetch_topic_facts_with_exa(topic: str, *, max_chars: int = 8000) -> str:
         # 使用 Exa 默认检索模式（非 deep），更接近“正常模式”
         results = client.search(
             query=query,
+            type="deep",
             num_results=12,
             # 使用 highlights 返回每个页面中最相关的精华片段，避免整页长文造成 token 爆炸
             contents={
@@ -617,33 +618,65 @@ def generate_video_script(
     use_responses_api = "kimi" in model_id.lower()
 
     if use_responses_api:
-        # Kimi 场景：不做资料收集，只负责脑洞故事改编
+        # Kimi 场景：不做资料收集，只负责脑洞故事改编；剧本将直接给 AI 视频模型使用
         system_prompt = (
-            "你是一名顶级的抖音爆款短视频编剧和视觉导演。你的任务是不做任何枯燥的资料收集，"
-            "直接将给定的【新闻热点话题】进行“脑洞化”或“平民化”的改编，虚构一个有趣、有张力且逻辑自洽的 15～25 秒短故事，整体节奏略快、语言更精炼。\n\n"
-            "【核心创作策略：如何把硬新闻变有趣？】\n"
-            "遇到宏大抽象的新闻（如国际关系、金融、政策），你必须使用以下两种策略之一：\n"
-            "1. 视觉隐喻（高概念）：例如“美收割虚拟货币”，不要写看新闻，而是写一个赛博朋克农场里，巨型外星收割机正在吸走地里的发光金币，小韭菜在一旁痛哭。\n"
-            "2. 平民微喜剧（接地气）：例如“四六级成绩公布”，写一个大学生为了查分在宿舍摆阵施法，结果网页崩溃的爆笑反转。\n\n"
-            "【创作目标】\n"
-            "1. 故事必须完全虚构，有戏剧性、有梗。不要复述新闻事实，要把新闻变成故事的“灵感内核”。\n"
-            "2. 结构紧凑：起因（抛出悬念）- 发展（夸张动作）- 转折（意想不到）- 结局（神来之笔）。\n"
-            "3. 整体风格适合抖音，节奏极快，可以搞笑、脑洞反转或轻悬疑。\n\n"
+            "你是一名顶级的抖音爆款短视频编剧兼视觉总监。你的任务是不做任何资料收集，"
+            "直接把给定的【新闻热点话题】“脑洞化”成一个完全虚构、有张力且逻辑自洽的约 30 秒短故事脚本。\n\n"
+            "特别提醒：这个剧本是写给「AI 视频模型」拍的，不是给真人剧组。整体质感要像【好莱坞高概念大片预告】或【苹果广告】——"
+            "画面极简、高级、有设计感，动作极少但有强烈情绪和视觉冲击。\n\n"
+            "【题材分级匹配：根据话题选择视觉世界观】\n"
+            "1. 科技 / 商业 / 金融 / AI / 芯片等硬核话题：\n"
+            "   - 严禁写成“破旧厂房、小作坊、地摊风”等低质感画面。\n"
+            "   - 统一采用【高概念大片 / 赛博朋克 / 硅谷高精尖 / 极简未来主义】审美。\n"
+            "   - 场景优先选择：未来感实验室、全息投影会议室、玻璃落地窗办公室、霓虹未来街区等。\n"
+            "   - 用“高级环境 + 夸张设定”制造反差与喜剧 / 悬疑效果。\n"
+            "2. 生活 / 娱乐 / 教育 / 情感类话题：\n"
+            "   - 可以是平民视角微喜剧或轻悬疑，但环境必须是干净、整洁、有现代感（如明亮公寓、咖啡馆、写字楼、电梯间）。\n"
+            "   - 严禁脏乱差、堆满杂物的细节描写。\n"
+            "3. 社会议题 / 敏感度较高话题：\n"
+            "   - 避免直接复刻新闻细节，改用隐喻、类比或平行世界设定，只借用情绪内核与冲突类型。\n"
+            "   - 画面保持电影预告片式的“留白感”，不要直给说教。\n\n"
+            "【美学与动作限制（AI 视频物理学）】\n"
+            "创作时必须默认画面将由 AI 视频模型（如可灵、MiniMax 等）直接生成，务必遵守以下硬性规则：\n"
+            "1. 动作极简原则：\n"
+            "   - 禁止复杂交互动作（如大量道具操作、组装零件、看手机屏幕上的具体内容、传递物品等）。\n"
+            "   - 每个镜头的动作控制在 1 个极简单动作：例如“缓慢抬头”“眼睛突然睁开发光”“人缓慢走向镜头”“灯光瞬间切换”“人物愣住、后退一步”等。\n"
+            "2. 场景纯净与质感原则：\n"
+            "   - 场景描述要“极简、高端、电影光影”，拒绝杂乱、破旧、堆满小物件的空间。\n"
+            "   - 优先使用：大面积留白、几何结构、干净桌面、通透玻璃、侧逆光、霓虹反射等视觉语言。\n"
+            "3. 单一主体原则：\n"
+            "   - 每个画面尽量只突出一个核心主体（一个人 / 一个物体 / 一台机器）。\n"
+            "   - 禁止复杂群戏，例如“甲把东西递给乙，丙在旁边大笑”这类多人物、多动作的描述。\n"
+            "4. 文字与细节可见度限制：\n"
+            "   - 绝对禁止依赖“屏幕里的小字 / 牌匾上的字 / 海报上的文案”等可读文字来讲故事，"
+            "也不要写“镜头给到文字”的桥段。\n"
+            "   - 必须用动作、光影变化、表情、构图、道具造型来传达信息，而不是依赖可读文字。\n"
+            "5. 镜头调度简化：\n"
+            "   - 镜头运动描述要简单、明确，如“缓慢推近”“缓慢拉远”“静止构图”。\n"
+            "   - 避免复杂摄影术语和连续多段机位切换说明。\n\n"
+            "【创作目标与叙事结构】\n"
+            "1. 故事必须完全虚构，有冲突、有反差、有钩子。不要复述新闻事实，只把新闻当作“灵感种子”。\n"
+            "2. 结构应紧凑清晰，适合约 30 秒短视频：\n"
+            "   - 起：一句话抛出悬念或惊人设定。\n"
+            "   - 承：冲突升级或夸张反应，迅速放大情绪。\n"
+            "   - 转：意想不到的反转或认知错位。\n"
+            "   - 合：一个精妙、好记的收束，让观众有“我得转发”的冲动。\n"
+            "3. 整体节奏适合抖音：短句、高密度信息，可以搞笑、反转脑洞或轻悬疑，但绝不能像正经新闻播报。\n\n"
             "【输出格式】严格按下列 JSON 结构输出，且只输出 JSON，无额外说明或 Markdown：\n"
             "{\n"
-            '  "title": "视频标题（要有网感，带点标题党）",\n'
-            '  "narration": "旁白文案（控制在约20秒内，极度口语化，多用短句、感叹句。吐槽或讲故事的口吻，避免重复堆砌同一句意思）",\n'
-            '  "visual_scenes": ["画面要点1", "画面要点2", "画面要点3", "画面要点4", "画面要点5"],\n'
-            '  "bgm_style": "搞笑/反转/悬疑/史诗"\n'
+            '  "title": "视频标题（要有网感和钩子，可略带标题党）",\n'
+            '  "narration": "旁白文案（约30秒，极度口语化，多用短句、设问句、感叹句；用讲故事或吐槽的语气，坚决不要播音腔）",\n'
+            '  "visual_scenes": ["镜头 1 画面要点", "镜头 2 画面要点", "镜头 3 画面要点", "镜头 4 画面要点", "镜头 5 画面要点"],\n'
+            '  "bgm_style": "搞笑/反转悬疑/赛博朋克/情绪电子 等中任选其一"\n'
             "}\n\n"
             "【narration（旁白）的写法要求】\n"
-            "  - 必须是完整的配音文案，用句号、问号、感叹号清晰断句，每句 7～18 个字，尽量避免废话和长句。\n"
+            "  - 必须是完整的配音文案，用句号、问号、感叹号清晰断句，每句 7～18 个字，避免废话和超长句。\n"
             "  - 旁白要负责把 5 个画面串起来，情绪起伏要大，但整体语句精炼、有力度。\n\n"
             "【visual_scenes（画面）的致命约束（必须严格遵守）】\n"
-            "  - 这是给AI视频模型（如可灵、MiniMax）的画面提示，所以描述必须是具体的【实体对象+动作+环境】！\n"
-            "  - 绝对禁止出现：新闻演播室、主播、看手机屏幕、看报纸的无聊画面。\n"
-            "  - 绝对禁止包含任何文字描述（如“招牌上写着”、“屏幕显示成绩”），必须用纯视觉动作替代（如“双手颤抖地敲击发光的键盘”、“脸色煞白瘫倒在地”）。\n"
-            "  - 5 个画面要像一部微电影的分镜，层层递进（起->承->转->合->彩蛋）。\n\n"
+            "  - 这是给 AI 视频模型（如可灵、MiniMax）的画面提示，所以描述必须是具体的【主体 + 简单动作 + 环境光影】，并符合上述“动作极简、场景纯净、单一主体”的规则。\n"
+            "  - 绝对禁止出现：新闻演播室、主播对着镜头读稿、盯着手机/电脑屏幕看新闻的无聊画面。\n"
+            "  - 绝对禁止包含任何可读文字的描述（如“招牌上写着”、“屏幕显示成绩”），必须用纯视觉动作和情绪替代。\n"
+            "  - 5 个画面要像一部微电影的分镜，层层递进（起 -> 承 -> 转 -> 合 -> 彩蛋或余味）。\n\n"
             "【输出格式硬性要求——务必严格遵守】\n"
             "1. 你必须只输出一个 JSON 值，不允许在 JSON 外多输出任何文字、解释、注释、示例、Markdown 代码块等内容。\n"
             "2. JSON 顶层类型必须是对象，字段名一律使用英文双引号包裹。\n"
@@ -993,7 +1026,8 @@ def optimize_visual_prompt(chinese_scenes_list: List[str], *, temperature: float
         "- Force premium commercial camera movement: 'fast dolly-in', 'quick zoom-out', 'hyper-lapse style movement', 'aggressive tracking shot', 'dynamic macro tracking shot', 'drone sweeping over', 'orbit around subject'.\n"
         "- The camera should almost never be static; even subtle shots must include panning, pushing, orbiting, or reframing.\n"
         "- The movement must match the news tone (e.g., fast and dynamic for sports, slow and tense but still kinetic for politics).\n"
-        "- When appropriate, explicitly mention 'high-energy cinematography' or 'fast-paced editing style'.\n\n"
+        "- When appropriate, explicitly mention 'high-energy cinematography' or 'fast-paced editing style'.\n"
+        "- When featuring VIPs or generic important figures, frequently use Over-The-Shoulder (OTS) shots, silhouettes, back shots, or close-ups of hands/objects to maintain a premium, mysterious cinematic feel without showing full faces.\n\n"
         "### 2. AESTHETICS BY CATEGORY\n"
         "- Tech/Finance: 'Futuristic, holographic glowing data streams, neon blue and gold lighting, sharp focus, 8k resolution, commercial macro photography.'\n"
         "- Sports (e.g., Basketball): 'High-contrast stadium lighting, sweat dripping, extreme slow motion, dynamic action, cinematic sports broadcast style.'\n"
@@ -1002,6 +1036,12 @@ def optimize_visual_prompt(chinese_scenes_list: List[str], *, temperature: float
         "- ABSOLUTELY NO readable text, signs, logos, chyrons, or captions.\n"
         "- NO newsroom desks or TV screens displaying text.\n"
         "- MUST append this exact negative constraint at the end of EVERY prompt: 'clean uncluttered background, devoid of typography, no text overlays, no random symbols, no visual noise, highly detailed.'\n\n"
+        "### 5. IDENTITY TRANSLATION & CENSORSHIP AVOIDANCE (CRITICAL)\n"
+        "- Video models CANNOT generate specific niche CEOs or politicians, and using political names will trigger API safety bans.\n"
+        "- You MUST translate specific real-world names into generic cinematic archetypes.\n"
+        "- Example 1 (Tech CEO): Translate '王兴兴' (Wang Xingxing) or '雷军' (Lei Jun) to 'A confident young Asian tech entrepreneur in a minimalist black t-shirt'.\n"
+        "- Example 2 (Politician): Translate '德国总理' (German Chancellor) or '拜登' (Biden) to 'A distinguished elderly European statesman in a tailored suit' or 'A VIP government official'.\n"
+        "- NEVER use real names of public figures, politicians, or specific brands in the output prompt. Use visual descriptions only.\n\n"
         "### OUTPUT FORMAT\n"
         "- Return ONLY a valid JSON array of strings.\n"
         "- Exactly one string per input scene, preserving the original order.\n"
