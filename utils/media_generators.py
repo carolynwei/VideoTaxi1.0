@@ -367,6 +367,183 @@ def generate_kling_multishot(
     )
 
 
+# --- MiniMax 文生视频（Hailuo 系列）---
+
+MINIMAX_API_BASE = os.getenv("MINIMAX_API_BASE", "https://api.minimax.io").rstrip("/")
+MINIMAX_VIDEO_GEN_URL = f"{MINIMAX_API_BASE}/v1/video_generation"
+MINIMAX_VIDEO_QUERY_URL = f"{MINIMAX_API_BASE}/v1/query/video_generation"
+MINIMAX_FILES_RETRIEVE_URL = f"{MINIMAX_API_BASE}/v1/files/retrieve"
+
+
+class MinimaxAPIError(RuntimeError):
+    """MiniMax 视频生成 API 请求失败或返回错误时抛出。"""
+
+
+def _minimax_api_key() -> str:
+    """
+    读取 MiniMax API Key。
+
+    优先从 Streamlit secrets["ANTHROPIC_API_KEY"]，否则环境变量 ANTHROPIC_API_KEY / MINIMAX_API_KEY。
+    """
+    try:
+        import streamlit as _st  # type: ignore
+
+        if hasattr(_st, "secrets") and _st.secrets:
+            v = (_st.secrets.get("ANTHROPIC_API_KEY") or "").strip()
+            if v:
+                return v
+    except Exception:
+        pass
+
+    api_key = (
+        os.getenv("ANTHROPIC_API_KEY", "").strip()
+        or os.getenv("MINIMAX_API_KEY", "").strip()
+    )
+    if not api_key:
+        raise KeyError("MiniMax API 需要 ANTHROPIC_API_KEY 或 MINIMAX_API_KEY。")
+    return api_key
+
+
+def generate_minimax_video(
+    prompt: str,
+    *,
+    model: str = "MiniMax-Hailuo-2.3",
+    duration: int = 6,
+    resolution: str = "768P",
+    poll_interval: int = 8,
+    timeout: int = 900,
+) -> str:
+    """
+    使用 MiniMax 文生视频 API 生成单段视频，返回下载 URL。
+
+    目前默认使用 MiniMax-Hailuo-2.3，时长 6 秒，分辨率 768P。
+    """
+    prompt = (prompt or "").strip()
+    if not prompt:
+        raise ValueError("prompt must be a non-empty string.")
+
+    api_key = _minimax_api_key()
+
+    headers = {
+        "Authorization": f"Bearer {api_key}",
+        "Content-Type": "application/json",
+    }
+    body: Dict[str, Any] = {
+        "model": model,
+        "prompt": prompt[:2000],
+        "duration": duration,
+        "resolution": resolution,
+        "prompt_optimizer": True,
+        "fast_pretreatment": True,
+    }
+
+    try:
+        resp = requests.post(
+            MINIMAX_VIDEO_GEN_URL,
+            headers=headers,
+            json=body,
+            timeout=60,
+        )
+    except requests.RequestException as exc:
+        raise MinimaxAPIError(f"MiniMax 文生视频创建任务失败: {exc}") from exc
+
+    try:
+        data: Dict[str, Any] = resp.json()
+    except json.JSONDecodeError as exc:
+        raise MinimaxAPIError(
+            f"MiniMax 文生视频创建任务返回非 JSON: {resp.text}"
+        ) from exc
+
+    base_resp = data.get("base_resp") or {}
+    if base_resp.get("status_code") != 0:
+        raise MinimaxAPIError(
+            f"MiniMax 创建任务失败: {base_resp.get('status_msg') or base_resp}"
+        )
+
+    task_id = (data.get("task_id") or "").strip()
+    if not task_id:
+        raise MinimaxAPIError(f"MiniMax 创建任务成功但未返回 task_id: {data}")
+
+    # 轮询任务状态
+    start = time.time()
+    while time.time() - start < timeout:
+        try:
+            qresp = requests.get(
+                MINIMAX_VIDEO_QUERY_URL,
+                headers=headers,
+                params={"task_id": task_id},
+                timeout=30,
+            )
+        except requests.RequestException as exc:
+            raise MinimaxAPIError(f"MiniMax 查询任务失败: {exc}") from exc
+
+        try:
+            qdata: Dict[str, Any] = qresp.json()
+        except json.JSONDecodeError as exc:
+            raise MinimaxAPIError(
+                f"MiniMax 查询任务返回非 JSON: {qresp.text}"
+            ) from exc
+
+        qbase = qdata.get("base_resp") or {}
+        if qbase.get("status_code") != 0:
+            raise MinimaxAPIError(
+                f"MiniMax 查询任务失败: {qbase.get('status_msg') or qbase}"
+            )
+
+        status = (qdata.get("status") or "").lower()
+        if status in ("preparing", "queueing", "processing"):
+            time.sleep(poll_interval)
+            continue
+        if status == "fail":
+            raise MinimaxAPIError(f"MiniMax 视频任务失败: {qdata}")
+        if status == "success":
+            file_id = (qdata.get("file_id") or "").strip()
+            if not file_id:
+                raise MinimaxAPIError(
+                    f"MiniMax 视频任务成功但未返回 file_id: {qdata}"
+                )
+            # 获取下载链接
+            try:
+                fresp = requests.get(
+                    MINIMAX_FILES_RETRIEVE_URL,
+                    headers=headers,
+                    params={"file_id": file_id},
+                    timeout=30,
+                )
+            except requests.RequestException as exc:
+                raise MinimaxAPIError(
+                    f"MiniMax 获取文件信息失败: {exc}"
+                ) from exc
+
+            try:
+                fdata: Dict[str, Any] = fresp.json()
+            except json.JSONDecodeError as exc:
+                raise MinimaxAPIError(
+                    f"MiniMax 获取文件信息返回非 JSON: {fresp.text}"
+                ) from exc
+
+            fbase = fdata.get("base_resp") or {}
+            if fbase.get("status_code") != 0:
+                raise MinimaxAPIError(
+                    f"MiniMax 获取文件信息失败: {fbase.get('status_msg') or fbase}"
+                )
+
+            file_obj = fdata.get("file") or {}
+            url = (file_obj.get("download_url") or "").strip()
+            if not url:
+                raise MinimaxAPIError(
+                    f"MiniMax 文件信息中无 download_url: {fdata}"
+                )
+            return url
+
+        # 未知状态，稍后重试
+        time.sleep(poll_interval)
+
+    raise MinimaxAPIError(
+        f"MiniMax 视频任务在 {timeout} 秒内未完成，task_id={task_id}"
+    )
+
+
 # --- 火山引擎 TTS（豆包语音合成模型 2.0 WebSocket）---
 
 VOLC_TTS_WS_URL = "wss://openspeech.bytedance.com/api/v3/tts/bidirection"
@@ -744,6 +921,8 @@ __all__ = [
     "KlingAPIError",
     "generate_kling_video",
     "generate_kling_multishot",
+    "MinimaxAPIError",
+    "generate_minimax_video",
     "VolcTTSError",
     "generate_tts_audio",
     "TTS_SPEAKER_FUNNY",

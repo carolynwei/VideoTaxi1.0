@@ -17,10 +17,12 @@ from utils.api_clients import (  # type: ignore
 )
 from utils.media_generators import (  # type: ignore
     KlingAPIError,
+    MinimaxAPIError,
     VolcTTSError,
     TTS_SPEAKER_FUNNY,
     TTS_SPEAKER_PRESETS,
     generate_kling_multishot,
+    generate_minimax_video,
     generate_tts_audio,
 )
 from utils.video_assembler import (  # type: ignore
@@ -49,6 +51,8 @@ def load_env_defaults() -> Dict[str, str]:
         "doubao": _get_default("ARK_API_KEY"),
         # DeepSeek 提示词优化
         "deepseek": _get_default("DEEPSEEK_API_KEY"),
+        # MiniMax 文生视频（Anthropic 兼容 Key）
+        "minimax": _get_default("ANTHROPIC_API_KEY"),
         # Kling 视频生成（AccessKey + SecretKey，用于 JWT 鉴权）
         "kling": _get_default("KLING_ACCESS_KEY"),
         "kling_secret": _get_default("KLING_SECRET_KEY"),
@@ -105,6 +109,12 @@ def main() -> None:
             type="password",
             value=defaults["deepseek"],
         )
+        minimax_key = st.text_input(
+            "MiniMax API Key（视频生成）",
+            type="password",
+            value=defaults["minimax"],
+            help="MiniMax 控制台获取的 API Key（用于 Hailuo 文生视频与 Anthropic 兼容接口）。",
+        )
         kling_key = st.text_input(
             "Kling Access Key",
             type="password",
@@ -128,17 +138,10 @@ def main() -> None:
         os.environ["ARK_API_KEY"] = doubao_key or ""
         os.environ["LAS_API_KEY"] = doubao_key or ""
         os.environ["DEEPSEEK_API_KEY"] = deepseek_key or ""
+        os.environ["ANTHROPIC_API_KEY"] = minimax_key or ""
         os.environ["KLING_ACCESS_KEY"] = kling_key or ""
         os.environ["KLING_SECRET_KEY"] = kling_secret or ""
         os.environ["TIANAPI_KEY"] = tianxing_key or ""
-
-        st.markdown("---")
-        st.caption(
-            "提示：可以将以上密钥写入项目根目录的 `.env` 文件，"
-            "变量名分别为 `ARK_API_KEY`、`DEEPSEEK_API_KEY`、"
-            "`KLING_ACCESS_KEY`、`KLING_SECRET_KEY`、`TIANAPI_KEY`，应用会自动读取；"
-            "或在 `.streamlit/secrets.toml` 中配置同名字段。"
-        )
 
         st.markdown("---")
         st.subheader("系统状态")
@@ -147,6 +150,9 @@ def main() -> None:
         )
         st.write(
             f"DeepSeek：{'✅ 已配置' if deepseek_key else '⚠️ 未配置'}"
+        )
+        st.write(
+            f"MiniMax 视频：{'✅ 已配置' if minimax_key else '⚠️ 未配置'}"
         )
         st.write(
             f"Kling 视频：{'✅ 已配置' if (kling_key and kling_secret) else '⚠️ 未配置（需 Access Key + Secret Key）'}"
@@ -205,8 +211,30 @@ def main() -> None:
 
     # ---------- 步骤 2：一键生成视频 ----------
     st.subheader("② 一键生成视频")
+
+    # 让用户在生成前选择文生视频模型：MiniMax（推荐）或 Kling 多镜头
+    st.markdown("**视频生成模型**")
+    video_model_options = [
+        "MiniMax Hailuo 2.3（推荐，单段 6 秒）",
+        "Kling-v3 多镜头（原多镜头流程）",
+    ]
+    default_model = st.session_state.get("video_model") or video_model_options[0]
+    video_model = st.selectbox(
+        "选择用于生成画面的模型：",
+        options=video_model_options,
+        index=video_model_options.index(default_model),
+        help="推荐使用 MiniMax Hailuo 2.3：速度较快、适合作为默认模型；如需多镜头更复杂的画面，可以选择 Kling。",
+    )
+    st.session_state["video_model"] = video_model
+
     disabled_generate = not (
-        selected_topic and doubao_key and deepseek_key and kling_key and kling_secret
+        selected_topic
+        and doubao_key
+        and deepseek_key
+        and (
+            (video_model.startswith("MiniMax") and minimax_key)
+            or (video_model.startswith("Kling") and kling_key and kling_secret)
+        )
     )
     if disabled_generate:
         st.caption(
@@ -306,17 +334,32 @@ def main() -> None:
 
                     # 3. 可灵多镜头视频（画面+音效/环境音，与 TTS 旁白叠加为背景）
                     status.update(
-                        label="步骤 3/4：正在生成多镜头视频（Kling-v3，约 2～10 分钟）…",
+                        label=(
+                            "步骤 3/4：正在生成视频（MiniMax Hailuo 2.3，约 1～3 分钟）…"
+                            if video_model.startswith("MiniMax")
+                            else "步骤 3/4：正在生成多镜头视频（Kling-v3，约 2～10 分钟）…"
+                        ),
                         state="running",
                     )
-                    video_url = generate_kling_multishot(
-                        optimized_prompts,
-                        total_duration=15,
-                        aspect_ratio="9:16",
-                        mode="pro",
-                        sound="on",
-                        timeout=900,
-                    )
+                    if video_model.startswith("MiniMax"):
+                        # 将多镜头英文 prompt 合并为一段描述，供 MiniMax 使用
+                        combined_prompt = " ".join(optimized_prompts)
+                        video_url = generate_minimax_video(
+                            combined_prompt,
+                            model="MiniMax-Hailuo-2.3",
+                            duration=6,
+                            resolution="768P",
+                            timeout=600,
+                        )
+                    else:
+                        video_url = generate_kling_multishot(
+                            optimized_prompts,
+                            total_duration=15,
+                            aspect_ratio="9:16",
+                            mode="pro",
+                            sound="on",
+                            timeout=900,
+                        )
                     _download_file(video_url, raw_video_path)
 
                     # 4. TTS 旁白 + 与可灵音效叠加 + 显眼字幕合成（豆包 narration 同时用于配音与字幕，保持一致）

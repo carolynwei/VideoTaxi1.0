@@ -644,14 +644,32 @@ def generate_video_script(topic: str, *, timeout: int = 90) -> Dict[str, Any]:
     # 为了兼容不同流式事件格式，这里统一使用非流式 Responses 调用，避免解析 SSE 事件。
     use_responses_api = "kimi" in model_id.lower()
     if use_responses_api:
-        data = _call_ark_responses_with_web_search(
-            model_id,
-            user_prompt,
-            system_prefix=system_prompt,
-            timeout=timeout,
-            stream=False,
-        )
-        raw_text = _extract_ark_output_text(data)
+        try:
+            data = _call_ark_responses_with_web_search(
+                model_id,
+                user_prompt,
+                system_prefix=system_prompt,
+                timeout=timeout,
+                stream=False,
+            )
+            raw_text = _extract_ark_output_text(data)
+        except ArkAPIError as exc:
+            # 某些账号 / 模型可能暂不支持 Responses 接口，容错退回 Chat Completions，至少保证流程可跑通。
+            print(
+                f"[ArkAPIError] Kimi Responses 调用失败，将回退到 Chat Completions：{exc}"
+            )
+            messages = [
+                {"role": "system", "content": system_prompt},
+                {"role": "user", "content": user_prompt},
+            ]
+            data = _call_doubao_chat_completions(
+                messages,
+                timeout=timeout,
+                model_id=model_id,
+                temperature=0.5,
+                enable_web_search=False,  # 我们已经通过 Exa 提供事实材料，这里不再强行开启内置搜索
+            )
+            raw_text = _extract_doubao_chat_content(data)
     else:
         messages: List[Dict[str, Any]] = [
             {"role": "system", "content": system_prompt},
