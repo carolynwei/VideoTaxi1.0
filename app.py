@@ -178,6 +178,17 @@ def load_css() -> None:
             color: #e0f2fe !important;
         }
 
+        /* 进度状态组件（步骤 1/4 等）深色化并提亮文字 */
+        [data-testid="stStatusWidget"] {
+            background: radial-gradient(circle at 0% 0%, #020617 0, #020617 60%, #020617 100%);
+            border-radius: 16px;
+            border: 1px solid rgba(56, 189, 248, 0.6);
+            box-shadow: 0 16px 38px rgba(15, 23, 42, 0.96);
+        }
+        [data-testid="stStatusWidget"] * {
+            color: #e0f2fe !important;
+        }
+
         /* 主流程说明区域加强可读性 */
         .vt-flow-caption {
             margin-top: 0.2rem;
@@ -828,40 +839,76 @@ def main() -> None:
             "至少要填 Doubao + DeepSeek + 一个视频生成 Key，系统才能完整跑完一键生成流程。"
         )
 
-        doubao_key = st.text_input(
-            "Doubao (Ark) API Key",
-            type="password",
-            value=defaults["doubao"],
-        )
-        deepseek_key = st.text_input(
-            "DeepSeek API Key",
-            type="password",
-            value=defaults["deepseek"],
-        )
-        minimax_key = st.text_input(
-            "MiniMax API Key（视频生成）",
-            type="password",
-            value=defaults["minimax"],
-            help="MiniMax 控制台获取的 API Key（用于 Hailuo 文生视频与 Anthropic 兼容接口）。",
-        )
-        kling_key = st.text_input(
-            "Kling Access Key",
-            type="password",
-            value=defaults["kling"],
-            help="可灵控制台获取的 Access Key，与 Secret Key 一起用于 JWT 鉴权。",
-        )
-        kling_secret = st.text_input(
-            "Kling Secret Key",
-            type="password",
-            value=defaults["kling_secret"],
-            help="可灵控制台获取的 Secret Key。",
-        )
-        tianxing_key = st.text_input(
-            "TianAPI Key（用于抖音热榜）",
-            type="password",
-            value=defaults["tianxing"],
-            help="在天行数据 / 天聚数行平台注册并申请 douyinhot 接口后获得。",
-        )
+        # 已在 .env 或 Streamlit secrets 中配置的 Key，不再在页面回显具体值，只提示已配置状态。
+        if defaults["doubao"]:
+            doubao_key = defaults["doubao"]
+            st.write(
+                "Doubao (Ark) API Key：✅ 已配置（值已隐藏，如需修改请在 .env 或 secrets.toml 中更新 ARK_API_KEY）"
+            )
+        else:
+            doubao_key = st.text_input(
+                "Doubao (Ark) API Key",
+                type="password",
+            )
+
+        if defaults["deepseek"]:
+            deepseek_key = defaults["deepseek"]
+            st.write(
+                "DeepSeek API Key：✅ 已配置（值已隐藏，如需修改请在配置文件中更新 DEEPSEEK_API_KEY）"
+            )
+        else:
+            deepseek_key = st.text_input(
+                "DeepSeek API Key",
+                type="password",
+            )
+
+        if defaults["minimax"]:
+            minimax_key = defaults["minimax"]
+            st.write(
+                "MiniMax API Key（视频生成）：✅ 已配置（值已隐藏，如需修改请在配置文件中更新 ANTHROPIC_API_KEY）"
+            )
+        else:
+            minimax_key = st.text_input(
+                "MiniMax API Key（视频生成）",
+                type="password",
+                help="MiniMax 控制台获取的 API Key（用于 Hailuo 文生视频与 Anthropic 兼容接口）。",
+            )
+
+        if defaults["kling"]:
+            kling_key = defaults["kling"]
+            st.write(
+                "Kling Access Key：✅ 已配置（值已隐藏，如需修改请在配置文件中更新 KLING_ACCESS_KEY）"
+            )
+        else:
+            kling_key = st.text_input(
+                "Kling Access Key",
+                type="password",
+                help="可灵控制台获取的 Access Key，与 Secret Key 一起用于 JWT 鉴权。",
+            )
+
+        if defaults["kling_secret"]:
+            kling_secret = defaults["kling_secret"]
+            st.write(
+                "Kling Secret Key：✅ 已配置（值已隐藏，如需修改请在配置文件中更新 KLING_SECRET_KEY）"
+            )
+        else:
+            kling_secret = st.text_input(
+                "Kling Secret Key",
+                type="password",
+                help="可灵控制台获取的 Secret Key。",
+            )
+
+        if defaults["tianxing"]:
+            tianxing_key = defaults["tianxing"]
+            st.write(
+                "TianAPI Key（用于抖音热榜）：✅ 已配置（值已隐藏，如需修改请在配置文件中更新 TIANAPI_KEY）"
+            )
+        else:
+            tianxing_key = st.text_input(
+                "TianAPI Key（用于抖音热榜）",
+                type="password",
+                help="在天行数据 / 天聚数行平台注册并申请 douyinhot 接口后获得。",
+            )
 
         # 将侧边栏配置写回环境变量，供 utils 模块读取
         os.environ["ARK_API_KEY"] = doubao_key or ""
@@ -938,7 +985,7 @@ def main() -> None:
                 <div class="vt-hot-table">
                   <div class="vt-hot-table-header">
                     <div class="vt-hot-table-title">今日抖音热榜</div>
-                    <span class="vt-hot-table-pill">在列表中点选一个话题</span>
+                    <span class="vt-hot-table-pill">在表格下面的下拉框中选择一个话题</span>
                   </div>
                 """,
                 unsafe_allow_html=True,

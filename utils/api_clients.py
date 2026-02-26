@@ -749,13 +749,36 @@ def generate_video_script(topic: str, *, timeout: int = 90) -> Dict[str, Any]:
         )
         raw_text = _extract_doubao_chat_content(data)
 
+    # ---------- 清洗与解析 JSON 输出，兼容 ```json 代码块与额外说明文字 ----------
+    cleaned = (raw_text or "").strip()
+
+    # 去掉 ``` 或 ```json 包裹
+    if cleaned.startswith("```"):
+        start = cleaned.find("\n")
+        if start != -1:
+            cleaned = cleaned[start + 1 :]
+        if cleaned.rstrip().endswith("```"):
+            cleaned = cleaned.rstrip()[:-3].rstrip()
+        cleaned = cleaned.strip()
+
+    # 如果模型在 JSON 前后加了解释性文字，尝试截取第一个 { 和最后一个 } 之间的内容
+    json_candidate = cleaned
+    if "{" in cleaned and "}" in cleaned:
+        first_brace = cleaned.find("{")
+        last_brace = cleaned.rfind("}")
+        if 0 <= first_brace < last_brace:
+            json_candidate = cleaned[first_brace : last_brace + 1]
+
     try:
-        parsed: Dict[str, Any] = json.loads(raw_text)
-    except json.JSONDecodeError as exc:
-        # Print raw text for easier debugging of prompt/format issues
-        print("[ArkAPIError] Model did not return valid JSON. Raw output:")
-        print(raw_text)
-        raise ArkAPIError("Model output is not valid JSON.") from exc
+        parsed: Dict[str, Any] = json.loads(json_candidate)
+    except json.JSONDecodeError:
+        # 退回尝试解析原始文本，以防误截断
+        try:
+            parsed = json.loads(raw_text)
+        except json.JSONDecodeError as exc:
+            print("[ArkAPIError] Model did not return valid JSON. Raw output:")
+            print(raw_text)
+            raise ArkAPIError("Model output is not valid JSON.") from exc
 
     return parsed
 
