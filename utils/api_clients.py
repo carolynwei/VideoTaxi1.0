@@ -110,9 +110,9 @@ def fetch_topic_facts_with_exa(topic: str, *, max_chars: int = 8000) -> str:
     )
 
     try:
+        # 使用 Exa 默认检索模式（非 deep），更接近“正常模式”
         results = client.search(
             query=query,
-            type="deep",
             num_results=12,
             # 使用 highlights 返回每个页面中最相关的精华片段，避免整页长文造成 token 爆炸
             contents={
@@ -139,7 +139,12 @@ def fetch_topic_facts_with_exa(topic: str, *, max_chars: int = 8000) -> str:
         if not (title or snippet):
             continue
 
-        block = f"[资料 {i}] {title}\n来源：{url}\n内容概括：{snippet}\n"
+        # 为 Kimi 提供尽量“干净”的事实材料，只保留标题和摘要内容，
+        # 避免类似「[资料 1]」「来源：」等包装文本干扰后续 JSON 输出格式。
+        if snippet:
+            block = snippet
+        else:
+            block = title
         lines.append(block)
 
     if not lines:
@@ -195,6 +200,12 @@ def _extract_ark_output_text(data: Mapping[str, Any]) -> str:
     The exact schema can vary slightly between versions; this function
     defensively supports the common layouts used by the v3 Responses API.
     """
+    # 先检查是否存在显式错误信息
+    error_obj = data.get("error")
+    if isinstance(error_obj, Mapping):
+        msg = error_obj.get("message") or error_obj.get("msg") or str(error_obj)
+        raise ArkAPIError(f"Ark API error: {msg}")
+
     def _collect_text_from_content_list(content_list: Any) -> List[str]:
         texts: List[str] = []
         if not isinstance(content_list, list):
@@ -224,28 +235,6 @@ def _extract_ark_output_text(data: Mapping[str, Any]) -> str:
                         texts.append("".join(segments))
 
         return texts
-
-    def _find_first_string(obj: Any) -> Optional[str]:
-        """
-        Very defensive fallback: walk the structure and return
-        the first reasonably long string we find.
-        """
-        if isinstance(obj, str):
-            text = obj.strip()
-            if text:
-                return text
-            return None
-        if isinstance(obj, Mapping):
-            for value in obj.values():
-                found = _find_first_string(value)
-                if found:
-                    return found
-        if isinstance(obj, list):
-            for value in obj:
-                found = _find_first_string(value)
-                if found:
-                    return found
-        return None
 
     # Preferred: Responses API-style: output -> message -> content[*].text
     output = data.get("output")
@@ -289,18 +278,16 @@ def _extract_ark_output_text(data: Mapping[str, Any]) -> str:
                         if isinstance(text_val, str) and text_val.strip():
                             return text_val.strip()
 
-    # As a very defensive fallback, try to walk through `output`
-    # (if present) or the whole payload to find the first string.
-    if isinstance(output, Mapping):
-        fallback = _find_first_string(output)
-        if fallback:
-            return fallback
+    # 如果没有拿到任何文本，进一步针对常见「只返回 resp_xxx id」的情况给出更清晰的报错，
+    # 避免误把 id 当成模型正文返回，导致后续 JSON 解析异常。
+    resp_id = data.get("id")
+    if not output and isinstance(resp_id, str):
+        raise ArkAPIError(
+            "Ark Responses API 调用未返回 output 内容，仅返回了任务 ID，"
+            "当前实现不支持这种异步模式。已放弃本次 Responses 调用，将回退到 Chat Completions。"
+        )
 
-    fallback = _find_first_string(data)
-    if fallback:
-        return fallback
-
-    # If we reach here, the structure is unexpected.
+    # 走到这里说明结构完全不符合预期，直接抛错而不是返回任意字符串。
     raise ArkAPIError(
         "Unable to extract text from Ark API response. "
         f"Top-level keys: {list(data.keys())}"

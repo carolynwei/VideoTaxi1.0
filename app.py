@@ -124,7 +124,15 @@ def load_css() -> None:
         [data-testid="stAppViewContainer"],
         [data-testid="stAppViewContainer"] > .main {
             background:
-                radial-gradient(circle at 10% 0%, #1a1a2e 0, #050816 55%, #020617 100%);
+                radial-gradient(circle at 10% 0%, #1a1a2e 0, #050816 55%, #020617 100%),
+                radial-gradient(circle at 80% 120%, rgba(15, 118, 190, 0.25) 0, transparent 60%),
+                repeating-linear-gradient(
+                    135deg,
+                    rgba(15, 23, 42, 0.9) 0px,
+                    rgba(15, 23, 42, 0.9) 1px,
+                    rgba(15, 23, 42, 0.96) 1px,
+                    rgba(15, 23, 42, 0.96) 4px
+                );
             font-family: "Inter", -apple-system, BlinkMacSystemFont, system-ui,
                          "PingFang SC", "Segoe UI", sans-serif;
             color: #e5e7eb;
@@ -175,6 +183,7 @@ def load_css() -> None:
             font-weight: 700 !important;
             color: #f9fafb !important;
             text-shadow: 0 0 6px rgba(15, 23, 42, 0.9);
+            background-color: transparent !important;
         }
         /* 折叠面板标题 hover / 展开时再提亮一点，便于视觉定位 */
         [data-testid="stExpander"]:hover summary,
@@ -182,6 +191,7 @@ def load_css() -> None:
         [data-testid="stExpander"]:hover button,
         [data-testid="stExpander"][aria-expanded="true"] button {
             color: #fefce8 !important;
+            background-color: transparent !important;
         }
 
         /* 信息提示（登录成功等）深色化 */
@@ -204,6 +214,12 @@ def load_css() -> None:
         }
         [data-testid="stStatusWidget"] * {
             color: #e0f2fe !important;
+        }
+        /* 保持状态标题区域在展开/折叠时也为深色背景，避免白条 */
+        [data-testid="stStatusWidget"] summary,
+        [data-testid="stStatusWidget"] details,
+        [data-testid="stStatusWidget"] button {
+            background-color: transparent !important;
         }
 
         /* 主流程说明区域加强可读性 */
@@ -845,8 +861,8 @@ def main() -> None:
             unsafe_allow_html=True,
         )
         # 在同一容器中渲染实际的表单 / 用户信息，以保持居中视觉
-        col_auth, col_msg = st.columns([1.2, 2.0])
-        with col_auth:
+        col_left, col_center, col_right = st.columns([1, 1.2, 1])
+        with col_center:
             if st.session_state["current_user"]:
                 current_name = st.session_state["current_user"]
                 avatar_char = (current_name or "U").strip()[0]
@@ -879,9 +895,8 @@ def main() -> None:
                     if ok:
                         st.session_state["current_user"] = username.strip()
 
-        with col_msg:
-            if st.session_state.get("auth_message"):
-                st.info(st.session_state["auth_message"])
+        if st.session_state.get("auth_message"):
+            st.info(st.session_state["auth_message"])
 
     # 未登录时仍允许体验，但不会为其持久化历史记录
     current_user = (st.session_state.get("current_user") or "").strip()
@@ -1036,22 +1051,21 @@ def main() -> None:
             end = min(start + page_size, total_items)
             page_items = hot_trends[start:end]
 
-            # 将当前页热点渲染为可勾选的表格，直接在表格中点选话题
-            df = pd.DataFrame(page_items)
+            # 将当前页热点渲染为可勾选的表格，直接在表格中点选话题（单选效果）
+            df_before = pd.DataFrame(page_items)
             # 保证存在一个用于选择的布尔列
             select_col = "选择"
-            if select_col not in df.columns:
-                df.insert(0, select_col, False)
+            if select_col not in df_before.columns:
+                df_before.insert(0, select_col, False)
 
-            # 根据之前已选话题，恢复当前页对应行的勾选状态
+            # 根据之前已选话题，恢复当前页对应行的勾选状态（最多一行为 True）
             previously_selected = st.session_state.get("selected_topic", "")
             if previously_selected:
-                for i, row in df.iterrows():
-                    if row.get("title", "") == previously_selected:
-                        df.at[i, select_col] = True
+                for i, row in df_before.iterrows():
+                    df_before.at[i, select_col] = row.get("title", "") == previously_selected
 
             edited_df = st.data_editor(
-                df,
+                df_before,
                 width="stretch",
                 hide_index=True,
                 column_config={
@@ -1091,13 +1105,29 @@ def main() -> None:
                         elif hasattr(st, "experimental_rerun"):  # pragma: no cover
                             st.experimental_rerun()
 
-            # 根据勾选结果更新当前选中的话题（如果多选，只取第一条）
-            selected_rows = edited_df[edited_df[select_col]].to_dict("records")
-            if selected_rows:
-                st.session_state["selected_topic"] = selected_rows[0].get("title", "")
-            else:
-                # 当前页没有勾选任何话题时，不清空全局选择，避免翻页时丢失
+            # 根据勾选结果更新当前选中的话题，并尽量推断“本次点击”的行，实现单选效果
+            try:
+                before_sel = df_before[select_col].tolist()
+                after_sel = edited_df[select_col].tolist()
+            except Exception:
+                before_sel = []
+                after_sel = []
+
+            changed_indices = [i for i, (b, a) in enumerate(zip(before_sel, after_sel)) if b != a]
+
+            # 情况 1：仅有一行从未选中 -> 选中，视为本次点击的行
+            if len(changed_indices) == 1 and not before_sel[changed_indices[0]] and after_sel[changed_indices[0]]:
+                row = edited_df.iloc[changed_indices[0]]
+                st.session_state["selected_topic"] = row.get("title", "")
+            # 情况 2：仅有一行从选中 -> 未选中，视为取消当前选择
+            elif len(changed_indices) == 1 and before_sel[changed_indices[0]] and not after_sel[changed_indices[0]]:
+                # 当前页取消勾选时，不立即清空全局选择，避免误触；保留原有 selected_topic
                 pass
+            else:
+                # 兜底：若存在选中行，则取第一条，保证最终状态为单选；否则保留原有选择
+                selected_rows = edited_df[edited_df[select_col]].to_dict("records")
+                if selected_rows:
+                    st.session_state["selected_topic"] = selected_rows[0].get("title", "")
 
             # 在表格下方以只读形式展示当前选中的话题
             if st.session_state.get("selected_topic"):
@@ -1116,10 +1146,14 @@ def main() -> None:
         "Kling v3 多镜头（约 15 秒）",
     ]
     default_model = st.session_state.get("video_model") or video_model_options[0]
+    if default_model in video_model_options:
+        default_model_index = video_model_options.index(default_model)
+    else:
+        default_model_index = 0
     video_model = st.selectbox(
-        "",
+        "选择视频生成模型",
         options=video_model_options,
-        index=video_model_options.index(default_model),
+        index=default_model_index,
         help="MiniMax：一条 6 秒短视频，更快更简单；Kling：多镜头约 15 秒，效果更复杂，等待时间更长。",
         label_visibility="collapsed",
     )
@@ -1141,7 +1175,7 @@ def main() -> None:
         ar_labels[0],
     )
     aspect_label = st.selectbox(
-        "",
+        "选择画面比例",
         options=ar_labels,
         index=ar_labels.index(default_ar_label),
         help="9:16：适合抖音、TikTok、小红书等竖屏短视频；16:9：适合电脑端、横屏投放；其他比例用于信息流广告位等特殊场景。",
@@ -1194,10 +1228,6 @@ def main() -> None:
         )
         # 配音音色选择（豆包语音 2.0）
         st.markdown("**选择配音音色**")
-        st.caption(
-            "常规音色：小天 2.0（默认）、Vivi 2.0、小何 2.0、云舟 2.0；"
-            "角色音色：儒雅逸辰、可爱女生、调皮公主、爽朗少年、天才同桌、知性灿灿。"
-        )
         voice_labels = list(TTS_SPEAKER_PRESETS.keys())
         # 当前选中的 speaker id（默认用小天 2.0）
         current_speaker_id = st.session_state.get("tts_speaker") or TTS_SPEAKER_FUNNY
@@ -1206,7 +1236,7 @@ def main() -> None:
             voice_labels[0],
         )
         selected_label = st.selectbox(
-            "",
+            "选择配音音色",
             options=voice_labels,
             index=voice_labels.index(default_label),
             help="可根据话题选择合适的音色进行配音。",
