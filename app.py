@@ -464,6 +464,41 @@ def load_css() -> None:
             color: #9ca3af;
         }
 
+        /* 登录区域居中展示 */
+        .auth-card-wrapper {
+            display: flex;
+            justify-content: center;
+            margin: 0.75rem 0 1.25rem;
+        }
+        .auth-card {
+            min-width: 0;
+            width: 100%;
+            max-width: 480px;
+            padding: 0.9rem 1.1rem 1.0rem;
+            border-radius: 18px;
+            background:
+                linear-gradient(145deg, rgba(15, 23, 42, 0.98), rgba(15, 23, 42, 0.9));
+            border: 1px solid rgba(148, 163, 184, 0.5);
+            box-shadow:
+                0 18px 38px rgba(15, 23, 42, 0.88),
+                0 0 26px rgba(56, 189, 248, 0.25);
+        }
+        .auth-card-header {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            margin-bottom: 0.55rem;
+        }
+        .auth-title {
+            font-size: 14px;
+            font-weight: 700;
+            color: #e5e7eb;
+        }
+        .auth-subtitle {
+            font-size: 12px;
+            color: #9ca3af;
+        }
+
         /* ---------- 用户名展示：在线状态指示灯 ---------- */
         .user-status-pill {
             display: inline-flex;
@@ -565,8 +600,15 @@ def load_css() -> None:
             transform: translateY(-1px);
         }
 
-        /* 输入框与表格：细节微调，贴合深色玻璃感 */
+        /* 输入框、下拉框与表格：细节微调，贴合深色玻璃感 */
         .stTextInput > div > div > input {
+            background-color: rgba(15, 23, 42, 0.95);
+            border-radius: 12px;
+            border: 1px solid rgba(55, 65, 81, 0.85);
+            color: #e5e7eb;
+        }
+
+        .stSelectbox > div > div {
             background-color: rgba(15, 23, 42, 0.95);
             border-radius: 12px;
             border: 1px solid rgba(55, 65, 81, 0.85);
@@ -787,6 +829,22 @@ def main() -> None:
         st.session_state["auth_message"] = ""
 
     with st.container():
+        st.markdown(
+            """
+            <div class="auth-card-wrapper">
+              <div class="auth-card">
+                <div class="auth-card-header">
+                  <div>
+                    <div class="auth-title">账户登录（可选）</div>
+                    <div class="auth-subtitle">用于保存生成记录，不影响功能体验。</div>
+                  </div>
+                </div>
+              </div>
+            </div>
+            """,
+            unsafe_allow_html=True,
+        )
+        # 在同一容器中渲染实际的表单 / 用户信息，以保持居中视觉
         col_auth, col_msg = st.columns([1.2, 2.0])
         with col_auth:
             if st.session_state["current_user"]:
@@ -811,7 +869,6 @@ def main() -> None:
                     st.session_state["current_user"] = ""
                     st.session_state["auth_message"] = ""
             else:
-                st.caption("（可选）登录后会自动保存你的生成记录，只想体验功能可以先不用登录。")
                 with st.form("login_form", clear_on_submit=False):
                     username = st.text_input("账号（支持中文 / 英文）", key="login_username")
                     password = st.text_input("密码（首次输入即为注册密码）", type="password", key="login_password")
@@ -1064,6 +1121,7 @@ def main() -> None:
         options=video_model_options,
         index=video_model_options.index(default_model),
         help="MiniMax：一条 6 秒短视频，更快更简单；Kling：多镜头约 15 秒，效果更复杂，等待时间更长。",
+        label_visibility="collapsed",
     )
     st.session_state["video_model"] = video_model
 
@@ -1087,6 +1145,7 @@ def main() -> None:
         options=ar_labels,
         index=ar_labels.index(default_ar_label),
         help="9:16：适合抖音、TikTok、小红书等竖屏短视频；16:9：适合电脑端、横屏投放；其他比例用于信息流广告位等特殊场景。",
+        label_visibility="collapsed",
     )
     aspect_ratio_value = aspect_options[aspect_label]
     st.session_state["aspect_ratio_value"] = aspect_ratio_value
@@ -1151,6 +1210,7 @@ def main() -> None:
             options=voice_labels,
             index=voice_labels.index(default_label),
             help="可根据话题选择合适的音色进行配音。",
+            label_visibility="collapsed",
         )
         selected_speaker_id = TTS_SPEAKER_PRESETS[selected_label]
         st.session_state["tts_speaker"] = selected_speaker_id
@@ -1381,7 +1441,7 @@ def main() -> None:
                 mime="video/mp4",
             )
         else:
-            st.caption("完成 ② 一键生成后，此处显示成片预览与下载。")
+            st.caption("完成 ② 一键生成后，此处才有显示。")
 
     # ---------- 登录用户的历史记录 ----------
     if current_user:
