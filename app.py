@@ -745,33 +745,33 @@ def main() -> None:
     st.markdown(
         """
         <div class="vt-step-wrapper">
-          <div class="vt-step-title">新手 3 步走</div>
+          <div class="vt-step-title">新手快速上手</div>
           <div class="step-cards">
             <div class="step-card">
               <div class="step-header">
                 <div class="step-number">1</div>
-                <div class="step-title">填写必需的 API Keys</div>
+                <div class="step-title">配置 API Keys</div>
               </div>
               <div class="step-body">
-                在左侧填入 Doubao（Ark）、DeepSeek，再任选一个视频生成 Key（MiniMax 或 Kling）。
+                在左侧填写 Doubao、DeepSeek，以及任意一个视频生成 Key。
               </div>
             </div>
             <div class="step-card">
               <div class="step-header">
                 <div class="step-number">2</div>
-                <div class="step-title">选择今日抖音热榜话题</div>
+                <div class="step-title">选择热榜话题</div>
               </div>
               <div class="step-body">
-                点击「获取今日抖音热榜」，在表格里点选你感兴趣的一条话题。
+                点击「获取今日抖音热榜」，在表格中选择一个感兴趣的话题。
               </div>
             </div>
             <div class="step-card">
               <div class="step-header">
                 <div class="step-number">3</div>
-                <div class="step-title">一键生成完整成片</div>
+                <div class="step-title">一键生成视频</div>
               </div>
               <div class="step-body">
-                在下方选择视频模型和配音声音，点击「开始一键生成」，等待系统自动完成全流程。
+                选择视频模型和配音后，点击「开始一键生成」，等待成片完成。
               </div>
             </div>
           </div>
@@ -858,7 +858,7 @@ def main() -> None:
         # 已在 .env 或 Streamlit secrets 中配置的 Key，不再在页面回显具体值，只提示已配置状态。
         if defaults["doubao"]:
             doubao_key = defaults["doubao"]
-            st.write("Doubao (Ark) API Key：✅ 已配置（值已隐藏）")
+            st.write("Doubao (Ark) API Key：✅ 已配置")
         else:
             doubao_key = st.text_input(
                 "Doubao (Ark) API Key",
@@ -867,7 +867,7 @@ def main() -> None:
 
         if defaults["deepseek"]:
             deepseek_key = defaults["deepseek"]
-            st.write("DeepSeek API Key：✅ 已配置（值已隐藏）")
+            st.write("DeepSeek API Key：✅ 已配置")
         else:
             deepseek_key = st.text_input(
                 "DeepSeek API Key",
@@ -876,7 +876,7 @@ def main() -> None:
 
         if defaults["minimax"]:
             minimax_key = defaults["minimax"]
-            st.write("MiniMax API Key（视频生成）：✅ 已配置（值已隐藏）")
+            st.write("MiniMax API Key（视频生成）：✅ 已配置")
         else:
             minimax_key = st.text_input(
                 "MiniMax API Key（视频生成）",
@@ -886,7 +886,7 @@ def main() -> None:
 
         if defaults["kling"]:
             kling_key = defaults["kling"]
-            st.write("Kling Access Key：✅ 已配置（值已隐藏）")
+            st.write("Kling Access Key：✅ 已配置")
         else:
             kling_key = st.text_input(
                 "Kling Access Key",
@@ -896,7 +896,7 @@ def main() -> None:
 
         if defaults["kling_secret"]:
             kling_secret = defaults["kling_secret"]
-            st.write("Kling Secret Key：✅ 已配置（值已隐藏）")
+            st.write("Kling Secret Key：✅ 已配置")
         else:
             kling_secret = st.text_input(
                 "Kling Secret Key",
@@ -906,7 +906,7 @@ def main() -> None:
 
         if defaults["tianxing"]:
             tianxing_key = defaults["tianxing"]
-            st.write("TianAPI Key（用于抖音热榜）：✅ 已配置（值已隐藏）")
+            st.write("TianAPI Key（用于抖音热榜）：✅ 已配置")
         else:
             tianxing_key = st.text_input(
                 "TianAPI Key（用于抖音热榜）",
@@ -923,45 +923,11 @@ def main() -> None:
         os.environ["KLING_SECRET_KEY"] = kling_secret or ""
         os.environ["TIANAPI_KEY"] = tianxing_key or ""
 
-        st.markdown("---")
-        st.subheader("系统状态")
-        st.write(
-            f"豆包 / Ark：{'✅ 已配置' if doubao_key else '⚠️ 未配置'}"
-        )
-        st.write(
-            f"DeepSeek：{'✅ 已配置' if deepseek_key else '⚠️ 未配置'}"
-        )
-        st.write(
-            f"MiniMax 视频：{'✅ 已配置' if minimax_key else '⚠️ 未配置'}"
-        )
-        st.write(
-            f"Kling 视频：{'✅ 已配置' if (kling_key and kling_secret) else '⚠️ 未配置（需 Access Key + Secret Key）'}"
-        )
-        st.write(
-            f"抖音热榜（TianAPI）：{'✅ 已配置' if tianxing_key else '⚠️ 未配置'}"
-        )
-
     # ---------- 主页面：两步流程 ----------
-    st.markdown(
-        """
-        <div class="vt-flow-caption">
-          整套流程只有两步：① 先从抖音热榜里选一个话题；② 再点下面的「开始一键生成」，中间所有步骤系统会自动完成。
-        </div>
-        """,
-        unsafe_allow_html=True,
-    )
     st.markdown("---")
 
     # ---------- 步骤 1：选择热点话题 ----------
-    st.subheader("① 选择热点话题（必做）")
-    st.markdown(
-        """
-        <div class="vt-step1-caption">
-          先点左侧按钮「获取今日抖音热榜」，再在表格中点选一条你感兴趣的话题，不会选就用排在最前面的一条。
-        </div>
-        """,
-        unsafe_allow_html=True,
-    )
+    st.subheader("① 选择热点话题")
     col_controls, col_table = st.columns([1, 2], gap="large")
 
     with col_controls:
@@ -991,7 +957,7 @@ def main() -> None:
                 <div class="vt-hot-table">
                   <div class="vt-hot-table-header">
                     <div class="vt-hot-table-title">今日抖音热榜</div>
-                    <span class="vt-hot-table-pill">在表格下面的下拉框中选择一个话题</span>
+                    <span class="vt-hot-table-pill">在表格中勾选一个话题</span>
                   </div>
                 """,
                 unsafe_allow_html=True,
@@ -1013,8 +979,34 @@ def main() -> None:
             end = min(start + page_size, total_items)
             page_items = hot_trends[start:end]
 
+            # 将当前页热点渲染为可勾选的表格，直接在表格中点选话题
             df = pd.DataFrame(page_items)
-            st.dataframe(df, width="stretch", hide_index=True)
+            # 保证存在一个用于选择的布尔列
+            select_col = "选择"
+            if select_col not in df.columns:
+                df.insert(0, select_col, False)
+
+            # 根据之前已选话题，恢复当前页对应行的勾选状态
+            previously_selected = st.session_state.get("selected_topic", "")
+            if previously_selected:
+                for i, row in df.iterrows():
+                    if row.get("title", "") == previously_selected:
+                        df.at[i, select_col] = True
+
+            edited_df = st.data_editor(
+                df,
+                width="stretch",
+                hide_index=True,
+                column_config={
+                    select_col: st.column_config.CheckboxColumn(
+                        "选择", help="点击勾选本行话题"
+                    ),
+                    "title": "话题",
+                    "hot": "热度",
+                },
+                disabled=["title", "hot"],
+                key=f"hot_editor_page_{current_page}",
+            )
             st.markdown("</div>", unsafe_allow_html=True)
 
             # 分页信息与翻页按钮（做得更显眼一点）
@@ -1042,27 +1034,17 @@ def main() -> None:
                         elif hasattr(st, "experimental_rerun"):  # pragma: no cover
                             st.experimental_rerun()
 
-            # 下拉框仅展示当前页的 4 条话题，避免信息过载
-            titles = [item.get("title", "") for item in page_items]
-            if titles:
-                previous_selected = st.session_state.get("selected_topic", "")
-                try:
-                    default_index = titles.index(previous_selected)
-                except ValueError:
-                    default_index = 0
-
-                selected_title = st.selectbox(
-                    "选择本支视频的话题：",
-                    options=titles,
-                    index=default_index,
-                )
-                st.session_state["selected_topic"] = selected_title
+            # 根据勾选结果更新当前选中的话题（如果多选，只取第一条）
+            selected_rows = edited_df[edited_df[select_col]].to_dict("records")
+            if selected_rows:
+                st.session_state["selected_topic"] = selected_rows[0].get("title", "")
             else:
-                st.session_state["selected_topic"] = ""
+                # 当前页没有勾选任何话题时，不清空全局选择，避免翻页时丢失
+                pass
 
-            # 额外提示当前已选中的话题，翻页时更直观
+            # 在表格下方以只读形式展示当前选中的话题
             if st.session_state.get("selected_topic"):
-                st.caption(f"当前已选话题：{st.session_state['selected_topic']}")
+                st.caption(f"选择的话题：{st.session_state['selected_topic']}")
 
     selected_topic: str = st.session_state.get("selected_topic", "") or ""
     st.markdown("---")
@@ -1070,18 +1052,18 @@ def main() -> None:
     # ---------- 步骤 2：一键生成视频 ----------
     st.subheader("② 一键生成视频")
 
-    # 让用户在生成前选择文生视频模型：MiniMax（推荐）或 Kling 多镜头
+    # 让用户在生成前选择文生视频模型：MiniMax 或 Kling 多镜头
     st.markdown("**选择视频生成模型**")
     video_model_options = [
-        "MiniMax Hailuo 2.3（推荐，单段 6 秒）",
-        "Kling-v3 多镜头（原多镜头流程）",
+        "MiniMax Hailuo 2.3（单段 6 秒，推荐）",
+        "Kling v3 多镜头（约 15 秒）",
     ]
     default_model = st.session_state.get("video_model") or video_model_options[0]
     video_model = st.selectbox(
-        "画面由谁来生成？",
+        "",
         options=video_model_options,
         index=video_model_options.index(default_model),
-        help="MiniMax：一条 6 秒短视频，更快更简单；Kling：多镜头 15 秒，效果更复杂，等待时间更长。",
+        help="MiniMax：一条 6 秒短视频，更快更简单；Kling：多镜头约 15 秒，效果更复杂，等待时间更长。",
     )
     st.session_state["video_model"] = video_model
 
@@ -1101,7 +1083,7 @@ def main() -> None:
         ar_labels[0],
     )
     aspect_label = st.selectbox(
-        "希望成片是竖屏还是横屏？",
+        "",
         options=ar_labels,
         index=ar_labels.index(default_ar_label),
         help="9:16：适合抖音、TikTok、小红书等竖屏短视频；16:9：适合电脑端、横屏投放；其他比例用于信息流广告位等特殊场景。",
@@ -1148,15 +1130,14 @@ def main() -> None:
             "整个过程大约 4～10 分钟，请耐心等待。"
         )
         st.caption(
-            "生成过程中请不要关闭本页面或浏览器标签，否则任务会被中断。"
+            "⚠️ 生成过程中请不要关闭本页面或浏览器标签，否则任务会被中断。"
             "生成成功后，成片和记录会出现在下方「生成结果」和「我的历史记录」，刷新或重新登录都能再找回。"
         )
         # 配音音色选择（豆包语音 2.0）
-        st.markdown("**选择配音声音**")
+        st.markdown("**选择配音音色**")
         st.caption(
-            "上面生成的旁白，会由你选的声音读出来。\n"
-            "- 常规声音：小天 2.0（默认）、Vivi 2.0、小何 2.0、云舟 2.0\n"
-            "- 角色配音：儒雅逸辰、可爱女生、调皮公主、爽朗少年、天才同桌、知性灿灿"
+            "常规音色：小天 2.0（默认）、Vivi 2.0、小何 2.0、云舟 2.0；"
+            "角色音色：儒雅逸辰、可爱女生、调皮公主、爽朗少年、天才同桌、知性灿灿。"
         )
         voice_labels = list(TTS_SPEAKER_PRESETS.keys())
         # 当前选中的 speaker id（默认用小天 2.0）
@@ -1166,10 +1147,10 @@ def main() -> None:
             voice_labels[0],
         )
         selected_label = st.selectbox(
-            "你想用哪种声音来配音？",
+            "",
             options=voice_labels,
             index=voice_labels.index(default_label),
-            help="可以多试几种声音风格，看哪种最适合这个话题。",
+            help="可根据话题选择合适的音色进行配音。",
         )
         selected_speaker_id = TTS_SPEAKER_PRESETS[selected_label]
         st.session_state["tts_speaker"] = selected_speaker_id
@@ -1400,7 +1381,7 @@ def main() -> None:
                 mime="video/mp4",
             )
         else:
-            st.caption("完成 ② 一键生成后，此处为可灵多镜头视频（含配音）。")
+            st.caption("完成 ② 一键生成后，此处显示成片预览与下载。")
 
     # ---------- 登录用户的历史记录 ----------
     if current_user:
