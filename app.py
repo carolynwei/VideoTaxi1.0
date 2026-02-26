@@ -1095,7 +1095,7 @@ def main() -> None:
                             st.experimental_rerun()
                 with col_next:
                     if st.button(
-                        "⬇ 下一页热点（查看更多）",
+                        "⬇ 下一页热点",
                         key="hot_next",
                         disabled=current_page >= total_pages - 1,
                     ):
@@ -1218,14 +1218,6 @@ def main() -> None:
                 "请先完成 ① 选择话题，并在左侧填好豆包、DeepSeek、MiniMax/Kling、TianAPI 的密钥。"
             )
     else:
-        st.caption(
-            "点击按钮后，系统会自动：写脚本 → 设计镜头 → 生成画面 → 配好旁白和中文字幕。"
-            "整个过程大约 4～10 分钟，请耐心等待。"
-        )
-        st.caption(
-            "⚠️ 生成过程中请不要关闭本页面或浏览器标签，否则任务会被中断。"
-            "生成成功后，成片和记录会出现在下方「生成结果」和「我的历史记录」，刷新或重新登录都能再找回。"
-        )
         # 配音音色选择（豆包语音 2.0）
         st.markdown("**选择配音音色**")
         voice_labels = list(TTS_SPEAKER_PRESETS.keys())
@@ -1245,7 +1237,21 @@ def main() -> None:
         selected_speaker_id = TTS_SPEAKER_PRESETS[selected_label]
         st.session_state["tts_speaker"] = selected_speaker_id
 
-    if st.button("开始一键生成", type="primary", disabled=disabled_generate):
+        # 将流程说明文字与「开始一键生成」按钮放在同一行左右并列，增强关联感
+        col_btn, col_desc = st.columns([1, 2], gap="small")
+        with col_btn:
+            start_clicked = st.button("开始一键生成", type="primary", disabled=False)
+        with col_desc:
+            st.caption(
+                "点击按钮后，系统会自动：写脚本 → 设计镜头 → 生成画面 → 配好旁白和中文字幕。"
+                "整个过程大约 4～10 分钟，请耐心等待。"
+            )
+            st.caption(
+                "⚠️ 生成过程中请不要关闭本页面或浏览器标签，否则任务会被中断。"
+                "生成成功后，成片和记录会出现在下方「生成结果」和「我的历史记录」，刷新或重新登录都能再找回。"
+            )
+    # 只有在可生成时才可能点击按钮
+    if not disabled_generate and "start_clicked" in locals() and start_clicked:
         temp_dir = Path("temp")
         temp_dir.mkdir(parents=True, exist_ok=True)
 

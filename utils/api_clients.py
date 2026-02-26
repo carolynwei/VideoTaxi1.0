@@ -764,13 +764,39 @@ def generate_video_script(topic: str, *, timeout: int = 90) -> Dict[str, Any]:
             cleaned = cleaned.rstrip()[:-3].rstrip()
         cleaned = cleaned.strip()
 
-    # 如果模型在 JSON 前后加了解释性文字，尝试截取第一个 { 和最后一个 } 之间的内容
-    json_candidate = cleaned
-    if "{" in cleaned and "}" in cleaned:
-        first_brace = cleaned.find("{")
-        last_brace = cleaned.rfind("}")
-        if 0 <= first_brace < last_brace:
-            json_candidate = cleaned[first_brace : last_brace + 1]
+    # 如果模型在 JSON 前后加了解释性文字，尝试从第一个 { 起做「括号配对」提取首个完整 JSON 对象，
+    # 比简单的 first/last rfind 更健壮（可处理字符串内的 { } 以及嵌套对象）。
+    def _extract_first_json_object(text: str) -> str:
+        start = text.find("{")
+        if start == -1:
+            return text
+        depth = 0
+        in_string = False
+        escape = False
+        for i in range(start, len(text)):
+            ch = text[i]
+            if escape:
+                escape = False
+                continue
+            if ch == "\\":
+                escape = True
+                continue
+            if ch == '"':
+                in_string = not in_string
+                continue
+            if in_string:
+                continue
+            if ch == "{":
+                depth += 1
+            elif ch == "}":
+                if depth > 0:
+                    depth -= 1
+                if depth == 0:
+                    return text[start : i + 1]
+        # 如果没能完整配对，退回原始文本，后续解析会给出清晰报错
+        return text
+
+    json_candidate = _extract_first_json_object(cleaned)
 
     try:
         parsed: Dict[str, Any] = json.loads(json_candidate)
