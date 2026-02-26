@@ -17,6 +17,12 @@ try:
 except ImportError:  # pragma: no cover - SDK may not be installed in all environments
     OpenAI = None  # type: ignore
 
+try:
+    # Exa 实时搜索 SDK，用于在 Kimi 生成脚本前先抓一批事实材料
+    from exa_py import Exa
+except ImportError:  # pragma: no cover - SDK may不一定安装
+    Exa = None  # type: ignore
+
 
 ARK_RESPONSES_URL = "https://ark.cn-beijing.volces.com/api/v3/responses"
 ARK_CHAT_COMPLETIONS_URL = "https://ark.cn-beijing.volces.com/api/v3/chat/completions"
@@ -33,6 +39,93 @@ class TianAPIError(RuntimeError):
 
 class DeepSeekAPIError(RuntimeError):
     """Raised when the DeepSeek API returns an error or unexpected payload."""
+
+
+class ExaAPIError(RuntimeError):
+    """Raised when the Exa web search API returns an error or unexpected payload."""
+
+
+_EXA_CLIENT: Optional["Exa"] = None
+
+
+def _get_exa_client() -> "Exa":
+    """
+    Lazily construct a global Exa client.
+
+    优先从 Streamlit secrets 读取 EXA_API_KEY，其次从环境变量 EXA_API_KEY / WEB_KEY。
+    """
+    global _EXA_CLIENT
+    if _EXA_CLIENT is not None:
+        return _EXA_CLIENT
+
+    if Exa is None:
+        raise ExaAPIError(
+            "Exa SDK 未安装，请先执行: pip install exa-py"
+        )
+
+    api_key = ""
+    # 优先 secrets
+    if st is not None:
+        try:
+            if "EXA_API_KEY" in st.secrets:
+                api_key = str(st.secrets["EXA_API_KEY"]).strip()
+        except Exception:
+            api_key = ""
+    # 其次环境变量（兼容 EXA_API_KEY / WEB_KEY）
+    if not api_key:
+        api_key = os.getenv("EXA_API_KEY", "").strip() or os.getenv("WEB_KEY", "").strip()
+
+    if not api_key:
+        raise ExaAPIError("EXA_API_KEY / WEB_KEY 未配置，无法使用 Exa 联网搜索。")
+
+    _EXA_CLIENT = Exa(api_key=api_key)
+    return _EXA_CLIENT
+
+
+def fetch_topic_facts_with_exa(topic: str, *, max_chars: int = 8000) -> str:
+    """
+    使用 Exa 对话题做一次聚合搜索，返回一段“事实材料”文本，供 Kimi 参考。
+
+    返回的是一段纯文本，包含若干条「来源 + 摘要」，长度控制在 max_chars 内。
+    """
+    topic = (topic or "").strip()
+    if not topic:
+        return ""
+
+    try:
+        client = _get_exa_client()
+    except ExaAPIError as exc:
+        print(f"[ExaAPIError] {exc}")
+        return ""
+
+    try:
+        results = client.search(
+            query=f"与「{topic}」相关的最新事实、新闻事件、数据和背景信息，中文结果优先",
+            type="auto",
+            num_results=6,
+            contents={"text": {"max_characters": 2000}},
+        )
+    except Exception as exc:  # pragma: no cover - 网络/服务错误
+        print(f"[ExaAPIError] 搜索失败: {exc}")
+        return ""
+
+    lines: List[str] = []
+    for i, r in enumerate(results.results, start=1):
+        title = (getattr(r, "title", "") or "").strip()
+        url = (getattr(r, "url", "") or "").strip()
+        snippet = (getattr(r, "text", "") or "").strip()
+        if not (title or snippet):
+            continue
+        block = f"[资料 {i}] {title}\n来源：{url}\n内容概括：{snippet}\n"
+        lines.append(block)
+
+    if not lines:
+        return ""
+
+    combined = "\n\n".join(lines).strip()
+    if len(combined) > max_chars:
+        combined = combined[: max_chars] + "\n\n…（其余内容已截断）"
+    return combined
 
 
 def _get_config_value(key: str) -> str:
@@ -496,10 +589,22 @@ def generate_video_script(topic: str, *, timeout: int = 90) -> Dict[str, Any]:
 
     model_id = _get_config_value("ARK_MODEL_ID")
 
+    # 若是 Kimi 模型，先用 Exa 补一批事实材料，供后续脚本生成参考
+    exa_facts = ""
+    if "kimi" in model_id.lower():
+        try:
+            exa_facts = fetch_topic_facts_with_exa(topic)
+        except Exception as exc:  # pragma: no cover
+            print(f"[ExaAPIError] 获取话题事实失败: {exc}")
+            exa_facts = ""
+
     system_prompt = (
         "你的角色是「联网事实与素材采集员」，后端已开启 enable_web_search。"
         "核心任务：针对给定的抖音热点话题，通过联网搜索获取客观、可验证的事实与素材，"
         "并整理成结构化输出，供后续环节做镜头设计与旁白撰写。\n\n"
+        "【以下是已为你整理好的外部事实材料（来自 Exa 实时搜索），请优先基于这些材料创作，"
+        "如与你自己的搜索结果不一致，以这些材料为准，避免凭空编造：】\n"
+        f"{exa_facts if exa_facts else '（未能额外获取到外部事实，请仅在确信的范围内回答，不要编造具体事实。）'}\n\n"
         "【必须执行的步骤】\n"
         "1. 联网搜索：针对该话题搜索最新报道、数据、时间线、当事人/机构、网友热议点、官方说法等。\n"
         "2. 只采用可验证的客观信息：人物、时间、地点、数字、事件经过、结果等尽量来自搜索结果；"
@@ -535,7 +640,8 @@ def generate_video_script(topic: str, *, timeout: int = 90) -> Dict[str, Any]:
         "narration 将原样用于配音与字幕，请融入具体事实、断句清晰、每句长度适中。时间表述一律用 2026 年。"
     )
 
-    # Kimi 等使用 Ark Responses API（web_search 工具）；豆包使用 Chat Completions API
+    # Kimi 等使用 Ark Responses API（web_search 工具）；豆包使用 Chat Completions API。
+    # 为了兼容不同流式事件格式，这里统一使用非流式 Responses 调用，避免解析 SSE 事件。
     use_responses_api = "kimi" in model_id.lower()
     if use_responses_api:
         data = _call_ark_responses_with_web_search(
@@ -543,7 +649,7 @@ def generate_video_script(topic: str, *, timeout: int = 90) -> Dict[str, Any]:
             user_prompt,
             system_prefix=system_prompt,
             timeout=timeout,
-            stream=True,
+            stream=False,
         )
         raw_text = _extract_ark_output_text(data)
     else:
