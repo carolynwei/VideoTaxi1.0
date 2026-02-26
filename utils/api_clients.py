@@ -585,9 +585,10 @@ def generate_video_script(
     The System Prompt explicitly instructs the model to return ONLY a JSON
     object with the schema:
         {
+          "facts_summary": ["基于 Exa 搜索与联网检索提炼出的关键事实1", ...],
           "title": "视频标题",
           "narration": "旁白文案（约30秒；会原样用于 TTS 配音与画面字幕，需断句清晰、每句适中）",
-          "visual_scenes": ["画面要点1", ...],
+          "visual_scenes": ["画面要点1", ...],  # 推荐 8 条，对应 8 个分镜
           "bgm_style": "搞笑/反转/悬疑"
         }
 
@@ -619,12 +620,28 @@ def generate_video_script(
     use_responses_api = "kimi" in model_id.lower()
 
     if use_responses_api:
-        # Kimi 场景：不做资料收集，负责将热点话题转化为具有强烈现实共鸣的电影级短片脚本
+        # ---------- Kimi 场景：结合 Exa 事实材料与联网搜索，创作电影级现实主义脚本 ----------
+        facts_text = exa_facts
+        if facts_text is None:
+            try:
+                facts_text = fetch_topic_facts_with_exa(topic)
+            except Exception as exc:  # pragma: no cover
+                print(f"[ExaAPIError] 获取话题事实失败: {exc}")
+                facts_text = ""
+
         system_prompt = (
-            "你是一名顶级的抖音短视频编剧兼视觉总监。你的任务是不做任何资料收集，"
-            "直接把给定的【新闻热点话题】转化为一个具有极强现实共鸣、高级写实感且逻辑自洽的约 30 秒短故事脚本。\n\n"
+            "你是一名顶级的抖音短视频编剧兼视觉总监。你的任务是基于给定的【新闻热点话题】和【外部事实材料】，"
+            "创作一个具有极强现实共鸣、高级写实感且逻辑自洽的约 30 秒短故事脚本。\n\n"
             "特别提醒：这个剧本是写给「AI 视频模型」拍的。整体质感要像【电影级写实纪录片】或【高端品牌商业广告】——"
             "画面极简、写实、充满真实生活或商业社会的气息，但光影和构图要具有好莱坞级别的电影感。\n\n"
+            "【事实材料（来自 Exa 搜索等外部检索）】\n"
+            f"{facts_text if facts_text else '（未能额外获取到外部事实，请仅在确信的范围内回答，不要编造具体事实。）'}\n\n"
+            "【事实基准铁律（务必严格遵守）】\n"
+            "1. 你接收到的参考资料（包括上方外部事实材料 + 后续联网检索到的内容）视为真实的客观事实基准。\n"
+            "2. 你的任务是基于这些事实进行影视化包装，而不是捏造事实。\n"
+            "3. 旁白和画面可以有艺术修饰，但核心事件必须 100% 遵照提供的资料：例如比赛比分、胜负结果、政策具体内容、金额、时间线、人物去向等，一律不得篡改或凭空杜撰。\n"
+            "4. 如果事实材料存在不确定或互相矛盾，请在 facts_summary 中如实标注“不确定”或“有多种说法”，并在脚本中避免给出绝对化结论，而不是瞎编一个版本。\n"
+            "5. 如确实查不到某个关键信息，可以在脚本的 narration 中用简短语句说明“查无定论”或“官方尚未明确披露”，而不是自创细节。\n\n"
             "【核心创作策略：基于现实主义的美学风格】\n"
             "1. 科技/财经/商业类（如政策、磋商、企业动态、机器人、汽车、芯片）：\n"
             "   - 采用【高端商业大片 / 华尔街写实风】审美。\n"
@@ -656,17 +673,23 @@ def generate_video_script(
             "【叙事结构与文案要求】\n"
             "1. 结构紧凑：起（真实悬念） -> 承（情绪放大） -> 转（态度或视角的转变） -> 合（引人深思或极具力量的定格）。\n"
             "2. 旁白文案（narration）：极度口语化、接地气。像是一个成熟的讲述者在跟你聊天，有情绪起伏，多用短句、设问句。坚决不要播音腔或新闻复述。\n\n"
-            "【输出格式硬性要求】严格按下列 JSON 结构输出，且只输出 JSON，无额外说明或 Markdown：\n"
+            "【输出 JSON 结构——先总结事实，再写脚本】\n"
+            "你必须先基于「事实材料 + 你自己的联网检索结果」，提炼出一份结构化的事实摘要，然后再在同一个 JSON 对象中写标题、旁白和分镜。严格按下列 JSON 结构输出，且只输出 JSON，无额外说明或 Markdown（visual_scenes 必须包含 8 条分镜）：\n"
             "{\n"
+            '  "facts_summary": ["基于检索材料提炼出的关键事实 1（不超过40字）", "关键事实 2", "关键事实 3"],\n'
             '  "title": "视频标题（要有网感和现实痛点，可略带标题党）",\n'
-            '  "narration": "旁白文案（约30秒，用讲真实故事或犀利点评的语气）",\n'
-            '  "visual_scenes": ["镜头 1 画面要点", "镜头 2 画面要点", "镜头 3 画面要点", "镜头 4 画面要点", "镜头 5 画面要点"],\n'
+            '  "narration": "旁白文案（约30秒，用讲真实故事或犀利点评的语气；内容必须与 facts_summary 中的事实严格一致，不得改写事实）",\n'
+            '  "visual_scenes": ["镜头 1 画面要点（基于 facts_summary）", "镜头 2 画面要点", "镜头 3 画面要点", "镜头 4 画面要点", "镜头 5 画面要点", "镜头 6 画面要点", "镜头 7 画面要点", "镜头 8 画面要点"],\n'
             '  "bgm_style": "沉浸剧情/高燃踩点/情绪低吟 等中任选其一"\n'
             "}\n\n"
+            "其中：\n"
+            "- facts_summary：必须先写 3～7 条要点式事实摘要，完全来源于上方外部材料和你实际查到的客观事实，语气客观中立，不做情绪渲染；这是后续脚本和画面的“事实锚点”。\n"
+            "- title / narration / visual_scenes：可以采用有情绪的表达，但不得与 facts_summary 中的事实相矛盾；你可以改变叙事角度和语言风格，但不能改变事实本身。\n\n"
             "【输出格式防错守则】\n"
             "1. 只输出一个合法的 JSON 值，绝不允许在外部有任何文字、解释、Markdown 符号（如 ```json）。\n"
             "2. 字段名和字符串必须用英文双引号包裹。\n"
             "3. 严禁出现结尾多余逗号（trailing comma）。\n"
+            "4. 如果 facts_summary 无法写满 3 条（因为内容确实太少），请如实写 1～2 条，并在其中说明“可用事实有限”。\n"
             "请确保最终返回的内容是语法严格合法的 JSON 文本。"
         )
 
@@ -674,11 +697,11 @@ def generate_video_script(
             f"当前抖音热点话题：【{topic.strip()}】。\n"
             "请把这个话题当成灵感内核，创作一个围绕该话题的现实主义短视频脚本。不要搞科幻或脱离实际的脑洞！\n"
             "要让人觉得这是真实发生的、极具质感的电影级画面。请扎根于现实生活、真实商业或体育场景进行延展。\n"
-            "请按照 JSON 结构返回结果：visual_scenes 必须是 5 条符合「极简、写实、无文字」原则的画面描述；"
+            "请按照 JSON 结构返回结果：visual_scenes 必须是 8 条符合「极简、写实、无文字」原则的画面描述；"
             "narration 写成口语化、情绪饱满的爆款旁白。"
         )
     else:
-        # 非 Kimi 场景仍然可以使用事实材料与联网搜索的思路
+        # 非 Kimi 场景：同样使用 Exa 事实材料与 Doubao 联网搜索的组合
         facts_text = exa_facts
         if facts_text is None:
             try:
@@ -694,6 +717,10 @@ def generate_video_script(
             "【以下是已为你整理好的外部事实材料（来自 Exa 实时搜索），请优先基于这些材料创作，"
             "如与你自己的搜索结果不一致，以这些材料为准，避免凭空编造：】\n"
             f"{facts_text if facts_text else '（未能额外获取到外部事实，请仅在确信的范围内回答，不要编造具体事实。）'}\n\n"
+            "【事实基准铁律（务必严格遵守）】\n"
+            "1. 上述外部事实材料 + 你后续通过 web_search 工具检索到的内容，共同构成客观事实基准。\n"
+            "2. 你的任务是围绕这些事实进行创意表达，而不是编造事实本身。\n"
+            "3. 涉及比分、政策条款、金额、时间线、人物去向等关键事件时，必须严格遵循可验证的公开报道，如无法确认请使用模糊表述或在 narration 中说明“不确定”，而不是自创版本。\n\n"
             "【必须执行的步骤】\n"
             "1. 联网搜索：务必先多轮使用 web_search 工具，针对该话题拆分出若干子问题，"
             "用不同的中文/英文关键词搜索最新报道、数据、时间线、当事人/机构、网友热议点、官方说法等；"
@@ -704,11 +731,12 @@ def generate_video_script(
             "3. 当前时间背景为 2026 年：理解为「故事发生在 2026 年左右」即可，"
             "避免写出具体的日历日期或精确时间（例如「2026年3月12日上午九点」），"
             "如需提到时间，请用「最近」「这段时间」「不久前」等模糊表达，不要编造具体年月日和几点几分。\n\n"
-            "【输出要求】严格按下列 JSON 结构输出，且只输出 JSON，无额外说明或 Markdown：\n\n"
+            "【输出要求】严格按下列 JSON 结构输出，且只输出 JSON，无额外说明或 Markdown（visual_scenes 推荐 8 条，用于后续 DeepSeek + MiniMax 8 镜头链路）：\n\n"
             "{\n"
+            '  "facts_summary": ["基于检索材料提炼出的关键事实 1（不超过40字）", "关键事实 2", "关键事实 3"],\n'
             '  "title": "视频标题",\n'
-            '  "narration": "旁白文案（约30秒，口语化、搞笑幽默；内容须基于你搜到的客观事实，可含具体数据、时间、人物）",\n'
-            '  "visual_scenes": ["画面要点1", "画面要点2", "画面要点3", "画面要点4", "画面要点5"],\n'
+            '  "narration": "旁白文案（约30秒，口语化、搞笑幽默；内容须基于你搜到的客观事实，可含具体数据、时间、人物，且不得与 facts_summary 矛盾）",\n'
+            '  "visual_scenes": ["画面要点1", "画面要点2", "画面要点3", "画面要点4", "画面要点5", "画面要点6", "画面要点7", "画面要点8"],\n'
             '  "bgm_style": "搞笑/反转/悬疑"\n'
             "}\n\n"
             "【narration 的用途与写法】\n"
@@ -717,9 +745,10 @@ def generate_video_script(
             "便于下游按句切字幕或按字打轴，观众听和看的是同一份文案。\n\n"
             "字段说明：\n"
             "  - title：基于该话题与搜索到的最新热梗/讨论角度拟标题，不泄露个人隐私。\n"
-            "  - narration：整段旁白，与 5 个画面要点顺序对应；尽量塞入你搜到的客观事实（数据、时间、人物、结果），保持口语化和幽默感；"
+            "  - narration：整段旁白，与 visual_scenes 中的画面要点顺序对应；尽量塞入你搜到的客观事实（数据、时间、人物、结果），保持口语化和幽默感；"
             "断句清晰、每句不宜过长，以便直接用于配音与字幕。\n"
-            "  - visual_scenes：共 5 条。每条是基于「搜索到的客观事实」提炼出的画面要点/素材点（例如：某场景、某事件瞬间、某数据对应的画面联想），"
+            "  - facts_summary：3～7 条关键事实摘要，全部来源于外部检索与权威公开报道，是后续脚本与画面的事实锚点。\n"
+            "  - visual_scenes：推荐 8 条。每条是基于「搜索到的客观事实」提炼出的画面要点/素材点（例如：某场景、某事件瞬间、某数据对应的画面联想），"
             "    不要求你写完整分镜剧本，具体镜头设计由下游完成；但要点之间要有逻辑顺序（起因→发展→转折或递进），便于后续做成连贯小故事。\n"
             "  - bgm_style：根据话题情绪选一个风格。\n\n"
             "【输出格式硬性要求——务必严格遵守】\n"
@@ -736,7 +765,7 @@ def generate_video_script(
         user_prompt = (
             f"当前热点话题：{topic.strip()}。（当前时间：2026年）\n"
             "请先联网搜索该话题的客观事实、最新动态、数据与热议点，再基于搜索结果填写上述 JSON。"
-            "visual_scenes 共 5 条，每条为基于事实提炼的画面要点。"
+            "visual_scenes 推荐写满 8 条，每条为基于事实提炼的画面要点，方便后续 DeepSeek + MiniMax 串联成 8 个镜头。"
             "narration 将原样用于配音与字幕，请融入具体事实、断句清晰、每句长度适中。时间表述一律用 2026 年。"
         )
 
@@ -1015,17 +1044,32 @@ def optimize_visual_prompt(chinese_scenes_list: List[str], *, temperature: float
         "Explicitly use patterns like 'First ..., then ...' or 'While ..., ...' so that time feels compressed and eventful.\n\n"
         "### PROMPT FORMULA\n"
         "Construct EVERY prompt strictly using this flow:\n"
-        "[Camera Movement] + [Fast multi-stage Action] + [Concrete Visual Metaphor / Subject] + [Environment & Depth] + [Cinematic Style & Lighting] + [Anti-Gibberish Constraints]\n\n"
+        "[Camera Movement] + [Fast multi-stage Action] + [Concrete Visual Metaphor / Subject] + [Environment & Depth] + [Material & Texture] + [Cinematic Style & Lighting] + [Anti-Gibberish Constraints]\n\n"
         "### 1. CAMERA & MOVEMENT (Dynamic & Premium)\n"
         "- Force premium commercial camera movement: 'fast dolly-in', 'quick zoom-out', 'hyper-lapse style movement', 'aggressive tracking shot', 'dynamic macro tracking shot', 'drone sweeping over', 'orbit around subject'.\n"
         "- The camera should almost never be static; even subtle shots must include panning, pushing, orbiting, or reframing.\n"
         "- The movement must match the news tone (e.g., fast and dynamic for sports, slow and tense but still kinetic for politics).\n"
         "- When appropriate, explicitly mention 'high-energy cinematography' or 'fast-paced editing style'.\n"
         "- When featuring VIPs or generic important figures, frequently use Over-The-Shoulder (OTS) shots, silhouettes, back shots, or close-ups of hands/objects to maintain a premium, mysterious cinematic feel without showing full faces.\n\n"
+        "### 1.5 GLOBAL VISUAL ANCHOR (STYLE CONSISTENCY)\n"
+        "- First, infer ONE shared visual anchor across ALL scenes: the same main subject (age, gender, ethnicity, outfit, hairstyle, materials) and the same core environment (office / arena / street, lighting mood, color palette).\n"
+        "- Reuse the exact same subject and environment description wording in EVERY prompt. For example: 'the same 30-year-old Asian man in a crisp white shirt and tailored navy-blue wool suit' or 'the same futuristic glass-walled boardroom with soft overhead lighting'.\n"
+        "- DO NOT change the subject's age, ethnicity, clothing color, or the overall environment style between prompts. Treat all clips as camera cuts inside one coherent scene.\n"
+        "- Always append a shared global style suffix to every prompt, such as: 'cinematic lighting, muted color grading, 8k resolution, photorealistic'.\n\n"
         "### 2. AESTHETICS BY CATEGORY\n"
         "- Tech/Finance: 'Futuristic, holographic glowing data streams, neon blue and gold lighting, sharp focus, 8k resolution, commercial macro photography.'\n"
         "- Sports (e.g., Basketball): 'High-contrast stadium lighting, sweat dripping, extreme slow motion, dynamic action, cinematic sports broadcast style.'\n"
         "- Politics/Economy: 'Serious moody lighting, shallow depth of field, sharp silhouettes, highly professional documentary style.'\n\n"
+        "### 2.5 MATERIAL & TEXTURE ANCHOR (DETAIL BOOST)\n"
+        "- Every prompt MUST explicitly describe key physical materials and surface details: fabrics, skin, metal, wood, glass, paper, plastic, etc.\n"
+        "- Replace generic nouns with textured descriptions. For example, instead of 'a suit', write 'a tailored navy-blue wool suit with visible fabric texture and subtle wrinkles'. Instead of 'a table', write 'a scratched mahogany wood desk with a rich, glossy finish'.\n"
+        "- Mention skin and micro-details when relevant: 'slightly sweaty skin with visible pores', 'fingerprints on the polished metal surface', 'tiny dust particles floating in the volumetric light'.\n"
+        "- These texture cues are mandatory to force video models to render fine details.\n\n"
+        "### 2.6 CINEMATOGRAPHY & CAMERA RIG (PHOTOREALISM)\n"
+        "- For EVERY prompt, include professional cinematography language: camera type, lens, depth of field, and lighting pattern.\n"
+        "- Prefer phrases like: 'shot on ARRI Alexa 65, 35mm lens, shallow depth of field', 'shot on a full-frame cinema camera with 50mm prime lens', 'macro photography with extremely shallow DOF'.\n"
+        "- Use lighting terms such as: 'Rembrandt lighting', 'soft window light', 'backlighting', 'hard spotlight with deep shadows', 'volumetric fog with light rays', 'neon rim lighting'.\n"
+        "- Explicitly combine them with the global suffix, for example: 'shot on ARRI Alexa 65, 35mm lens, Rembrandt lighting, cinematic lighting, muted color grading, 8k resolution, photorealistic'.\n\n"
         "### 3. ANTI-TEXT & PURITY RULES (STRICT STRICT STRICT)\n"
         "- ABSOLUTELY NO readable text, signs, logos, chyrons, or captions.\n"
         "- NO newsroom desks or TV screens displaying text.\n"

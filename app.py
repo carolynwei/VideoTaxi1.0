@@ -30,6 +30,7 @@ from utils.media_generators import (  # type: ignore
 from utils.video_assembler import (  # type: ignore
     VideoAssembleError,
     assemble_final_video,
+    concatenate_video_files,
 )
 from utils.user_store import (  # type: ignore
     append_history_item,
@@ -1342,14 +1343,37 @@ def main() -> None:
                         state="running",
                     )
                     if video_model.startswith("MiniMax"):
-                        # 将多镜头英文 prompt 合并为一段描述，供 MiniMax 使用
-                        combined_prompt = " ".join(optimized_prompts)
-                        video_url = generate_minimax_video(
-                            combined_prompt,
-                            model="MiniMax-Hailuo-2.3",
-                            duration=6,
-                            resolution="768P",
-                            timeout=600,
+                        # MiniMax：将 8 个分镜拆成两组，每组 4 个，连续调用两次 API，
+                        # 再将两段视频拼接为一条长视频，便于后续配音与字幕按 8 个分镜铺开。
+                        chunk_size = 4
+                        chunks: List[List[str]] = []
+                        for i in range(0, len(optimized_prompts), chunk_size):
+                            chunk = optimized_prompts[i : i + chunk_size]
+                            if chunk:
+                                chunks.append(chunk)
+                        # 至多调用两次 MiniMax，超出的分镜丢弃，以保证 2 * 4 = 8 的结构
+                        chunks = chunks[:2]
+                        if not chunks:
+                            raise MinimaxAPIError("没有可用于 MiniMax 的英文分镜 Prompt。")
+
+                        hailuo_parts: List[Path] = []
+                        for idx, chunk in enumerate(chunks, start=1):
+                            combined_prompt = " ".join(chunk)
+                            video_url = generate_minimax_video(
+                                combined_prompt,
+                                model="MiniMax-Hailuo-2.3",
+                                duration=6,
+                                resolution="768P",
+                                timeout=600,
+                            )
+                            part_path = temp_dir / f"minimax_part_{idx}.mp4"
+                            _download_file(video_url, part_path)
+                            hailuo_parts.append(part_path)
+
+                        # 将多段 MiniMax 输出视频拼接成一条完整视频，写入 raw_video_path
+                        concatenate_video_files(
+                            [str(p) for p in hailuo_parts],
+                            str(raw_video_path),
                         )
                     else:
                         video_url = generate_kling_multishot(
@@ -1360,7 +1384,7 @@ def main() -> None:
                             sound="on",
                             timeout=900,
                         )
-                    _download_file(video_url, raw_video_path)
+                        _download_file(video_url, raw_video_path)
                     progress_bar.progress(80)
 
                     # 5. TTS 旁白 + 与可灵音效叠加 + 显眼字幕合成（豆包 narration 同时用于配音与字幕，保持一致）

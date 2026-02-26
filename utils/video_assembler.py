@@ -502,8 +502,63 @@ def assemble_final_video(
     return str(out_path)
 
 
+def concatenate_video_files(
+    input_paths: Sequence[str],
+    output_path: str,
+) -> str:
+    """
+    将多段视频无缝串联为一条新视频，保持原始画面与音频轨道。
+
+    用于例如连续多次 MiniMax 调用后，将多段 6 秒视频合成为一个长视频，
+    再交给 assemble_final_video 做配音与字幕。
+    """
+    _ensure_moviepy_available()
+    _configure_moviepy_binaries_from_env()
+
+    if not input_paths:
+        raise VideoAssembleError("concatenate_video_files 需要至少一个输入视频路径。")
+
+    out_path = Path(output_path)
+    out_path.parent.mkdir(parents=True, exist_ok=True)
+
+    clips: List[Any] = []
+    try:
+        for p in input_paths:
+            path_obj = Path(p)
+            if not path_obj.is_file():
+                raise VideoAssembleError(f"待拼接的视频文件不存在：{path_obj}")
+            clips.append(VideoFileClip(str(path_obj)))
+
+        if not clips:
+            raise VideoAssembleError("未能加载任何可用视频片段。")
+
+        # 使用 compose 模式，自动对齐分辨率与帧率
+        final_clip = concatenate_videoclips(clips, method="compose")
+        fps = clips[0].fps or 25
+        final_clip.write_videofile(
+            str(out_path),
+            codec="libx264",
+            audio_codec="aac",
+            fps=fps,
+        )
+    finally:
+        for c in clips:
+            try:
+                c.close()
+            except Exception:
+                pass
+        if "final_clip" in locals():
+            try:
+                final_clip.close()
+            except Exception:
+                pass
+
+    return str(out_path)
+
+
 __all__ = [
     "VideoAssembleError",
     "assemble_final_video",
+    "concatenate_video_files",
 ]
 
