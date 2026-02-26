@@ -469,6 +469,12 @@ def _call_doubao_chat_completions(
             timeout=timeout,
         )
     except requests.RequestException as exc:
+        # 对超时错误做更友好的提示，便于前端展示
+        if "Read timed out" in str(exc) or "read timeout" in str(exc).lower():
+            raise ArkAPIError(
+                f"Doubao Chat API 请求在 {timeout} 秒内未返回结果（超时）。"
+                "这通常是网络波动或模型负载过高导致的，请稍后重试一次。"
+            ) from exc
         raise ArkAPIError(f"Failed to call Doubao Chat API: {exc}") from exc
 
     if not response.ok:
@@ -507,7 +513,7 @@ def _extract_doubao_chat_content(data: Mapping[str, Any]) -> str:
     )
 
 
-def generate_script_with_search(query: str, *, timeout: int = 90) -> str:
+def generate_script_with_search(query: str, *, timeout: int = 180) -> str:
     """
     Call Doubao model via Chat Completions API to generate a short-video script.
 
@@ -517,7 +523,7 @@ def generate_script_with_search(query: str, *, timeout: int = 90) -> str:
 
     Args:
         query: User's request text, e.g. "结合今日热点写一个短视频脚本".
-        timeout: Optional requests timeout in seconds (default 90; 豆包联网生成约 30–60s).
+        timeout: Optional requests timeout in seconds (default 180; 豆包/Kimi 联网生成约 30–120s).
 
     Returns:
         The generated script text from the model.
@@ -563,7 +569,12 @@ def generate_script_with_search(query: str, *, timeout: int = 90) -> str:
     return _extract_doubao_chat_content(data)
 
 
-def generate_video_script(topic: str, *, timeout: int = 90) -> Dict[str, Any]:
+def generate_video_script(
+    topic: str,
+    *,
+    timeout: int = 180,
+    exa_facts: Optional[str] = None,
+) -> Dict[str, Any]:
     """
     Generate a structured, JSON-format short-video script based on a hot topic.
     When ARK_MODEL_ID contains \"kimi\", uses Ark Responses API with web_search tool (Kimi);
@@ -585,7 +596,10 @@ def generate_video_script(topic: str, *, timeout: int = 90) -> Dict[str, Any]:
 
     Args:
         topic: The selected hot topic from Douyin trends.
-        timeout: Optional requests timeout in seconds (default 90; 豆包联网生成约 30–60s).
+        timeout: Optional requests timeout in seconds (default 180; 豆包/Kimi 联网生成约 30–120s).
+        exa_facts: Optional external facts string collected via Exa. If provided,
+            this value will be embedded到 system prompt 中；如果为 None，则由本函数
+            内部调用 fetch_topic_facts_with_exa 自动获取。
 
     Returns:
         A Python dict parsed from the JSON returned by the model.
@@ -649,12 +663,13 @@ def generate_video_script(topic: str, *, timeout: int = 90) -> Dict[str, Any]:
         )
     else:
         # 非 Kimi 场景仍然可以使用事实材料与联网搜索的思路
-        exa_facts = ""
-        try:
-            exa_facts = fetch_topic_facts_with_exa(topic)
-        except Exception as exc:  # pragma: no cover
-            print(f"[ExaAPIError] 获取话题事实失败: {exc}")
-            exa_facts = ""
+        facts_text = exa_facts
+        if facts_text is None:
+            try:
+                facts_text = fetch_topic_facts_with_exa(topic)
+            except Exception as exc:  # pragma: no cover
+                print(f"[ExaAPIError] 获取话题事实失败: {exc}")
+                facts_text = ""
 
         system_prompt = (
             "你的角色是「联网事实与素材采集员」，后端已开启 enable_web_search。"
@@ -662,7 +677,7 @@ def generate_video_script(topic: str, *, timeout: int = 90) -> Dict[str, Any]:
             "并整理成结构化输出，供后续环节做镜头设计与旁白撰写。\n\n"
             "【以下是已为你整理好的外部事实材料（来自 Exa 实时搜索），请优先基于这些材料创作，"
             "如与你自己的搜索结果不一致，以这些材料为准，避免凭空编造：】\n"
-            f"{exa_facts if exa_facts else '（未能额外获取到外部事实，请仅在确信的范围内回答，不要编造具体事实。）'}\n\n"
+            f"{facts_text if facts_text else '（未能额外获取到外部事实，请仅在确信的范围内回答，不要编造具体事实。）'}\n\n"
             "【必须执行的步骤】\n"
             "1. 联网搜索：务必先多轮使用 web_search 工具，针对该话题拆分出若干子问题，"
             "用不同的中文/英文关键词搜索最新报道、数据、时间线、当事人/机构、网友热议点、官方说法等；"

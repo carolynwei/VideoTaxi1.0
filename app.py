@@ -12,6 +12,7 @@ from utils.api_clients import (  # type: ignore
     ArkAPIError,
     DeepSeekAPIError,
     TianAPIError,
+    fetch_topic_facts_with_exa,
     generate_video_script,
     get_douyin_hot_trends,
     optimize_visual_prompt,
@@ -1274,7 +1275,7 @@ def main() -> None:
                 bgm_path_to_use = None
 
         use_status = hasattr(st, "status")
-        # 进度条：按 4 个大步骤粗略更新 0 → 25 → 50 → 75 → 100
+        # 进度条：按 5 个大步骤粗略更新 0 → 20 → 40 → 60 → 80 → 100
         progress_bar = st.progress(0)
         # Kling 目前官方支持的画面比例（其他比例通过后期裁剪成片）
         kling_supported_aspects = {"9:16", "16:9", "1:1"}
@@ -1286,22 +1287,34 @@ def main() -> None:
                 with st.status(
                     "开始一键生成...", state="running", expanded=True
                 ) as status:
-                    # 1. 生成脚本
-                    status.update(label="步骤 1/4：正在生成文案（Doubao / Ark）...", state="running")
-                    script = generate_video_script(selected_topic)
+                    # 1. 联网收集事实资料（Exa）
+                    status.update(
+                        label="步骤 1/5：正在联网搜集事实资料（Exa 实时搜索）...",
+                        state="running",
+                    )
+                    exa_facts = fetch_topic_facts_with_exa(selected_topic)
+                    if exa_facts:
+                        status.write("已通过 Exa 收集到一批外部事实材料，将用于后续脚本创作。")
+                    else:
+                        status.write("未能从 Exa 额外获取到事实材料，将仅基于模型自身知识创作脚本。")
+                    progress_bar.progress(20)
+
+                    # 2. 生成脚本
+                    status.update(label="步骤 2/5：正在生成文案（Doubao / Ark）...", state="running")
+                    script = generate_video_script(selected_topic, exa_facts=exa_facts)
                     st.session_state["last_script"] = script
                     status.write(f"脚本标题：{script.get('title', '（未返回）')}")
-                    progress_bar.progress(25)
+                    progress_bar.progress(40)
 
-                    # 2. 优化分镜为英文 Prompt
-                    status.update(label="步骤 2/4：正在优化分镜（DeepSeek 多镜头 prompt）...", state="running")
+                    # 3. 优化分镜为英文 Prompt
+                    status.update(label="步骤 3/5：正在优化分镜（DeepSeek 多镜头 prompt）...", state="running")
                     scenes = script.get("visual_scenes") or []
                     if not isinstance(scenes, list) or not scenes:
                         raise ArkAPIError("模型未返回 visual_scenes，用于视频分镜。")
                     optimized_prompts = optimize_visual_prompt(scenes)
                     st.session_state["optimized_prompts"] = optimized_prompts
                     status.write("分镜已优化为英文 Prompt（多镜头）。")
-                    progress_bar.progress(50)
+                    progress_bar.progress(60)
 
                     # 等待生成期间提供可选的脚本预览，默认收起，避免占满状态区域
                     status.write("---")
@@ -1319,12 +1332,12 @@ def main() -> None:
                         for idx, p in enumerate(optimized_prompts, start=1):
                             st.write(f"{idx}. {p[:100]}{'…' if len(p) > 100 else ''}")
 
-                    # 3. 可灵多镜头视频（画面+音效/环境音，与 TTS 旁白叠加为背景）
+                    # 4. 可灵 / MiniMax 视频（画面+音效/环境音，与 TTS 旁白叠加为背景）
                     status.update(
                         label=(
-                            "步骤 3/4：正在生成视频（MiniMax Hailuo 2.3，约 1～3 分钟）…"
+                            "步骤 4/5：正在生成视频（MiniMax Hailuo 2.3，约 1～3 分钟）…"
                             if video_model.startswith("MiniMax")
-                            else "步骤 3/4：正在生成多镜头视频（Kling-v3，约 2～10 分钟）…"
+                            else "步骤 4/5：正在生成多镜头视频（Kling-v3，约 2～10 分钟）…"
                         ),
                         state="running",
                     )
@@ -1348,10 +1361,10 @@ def main() -> None:
                             timeout=900,
                         )
                     _download_file(video_url, raw_video_path)
-                    progress_bar.progress(75)
+                    progress_bar.progress(80)
 
-                    # 4. TTS 旁白 + 与可灵音效叠加 + 显眼字幕合成（豆包 narration 同时用于配音与字幕，保持一致）
-                    status.update(label="步骤 4/4：正在生成旁白、混音与字幕（火山 TTS + MoviePy）...", state="running")
+                    # 5. TTS 旁白 + 与可灵音效叠加 + 显眼字幕合成（豆包 narration 同时用于配音与字幕，保持一致）
+                    status.update(label="步骤 5/5：正在生成旁白、混音与字幕（火山 TTS + MoviePy）...", state="running")
                     narration_text = script.get("narration", "")
                     tts_meta = generate_tts_audio(
                         narration_text,
@@ -1372,17 +1385,24 @@ def main() -> None:
                     progress_bar.progress(100)
             else:
                 with st.spinner("正在一键生成完整视频，请稍候..."):
-                    script = generate_video_script(selected_topic)
-                    st.session_state["last_script"] = script
-                    progress_bar.progress(25)
+                    # 1) 联网收集资料（Exa，可选）
+                    exa_facts = fetch_topic_facts_with_exa(selected_topic)
+                    progress_bar.progress(20)
 
+                    # 2) 生成脚本
+                    script = generate_video_script(selected_topic, exa_facts=exa_facts)
+                    st.session_state["last_script"] = script
+                    progress_bar.progress(40)
+
+                    # 3) DeepSeek 优化分镜
                     scenes = script.get("visual_scenes") or []
                     if not isinstance(scenes, list) or not scenes:
                         raise ArkAPIError("模型未返回 visual_scenes，用于视频分镜。")
                     optimized_prompts = optimize_visual_prompt(scenes)
                     st.session_state["optimized_prompts"] = optimized_prompts
-                    progress_bar.progress(50)
+                    progress_bar.progress(60)
 
+                    # 4) 生成视频
                     video_url = generate_kling_multishot(
                         optimized_prompts,
                         total_duration=15,
@@ -1392,8 +1412,9 @@ def main() -> None:
                         timeout=900,
                     )
                     _download_file(video_url, raw_video_path)
-                    progress_bar.progress(75)
-                    # 豆包 narration 原样用于 TTS 配音与字幕，保证声画一致
+                    progress_bar.progress(80)
+
+                    # 5) TTS + 封装
                     narration_text = script.get("narration", "")
                     tts_meta = generate_tts_audio(
                         narration_text,
