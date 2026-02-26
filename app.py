@@ -1,4 +1,5 @@
 import os
+import time
 from pathlib import Path
 from typing import Any, Dict, List, Optional
 
@@ -28,6 +29,12 @@ from utils.media_generators import (  # type: ignore
 from utils.video_assembler import (  # type: ignore
     VideoAssembleError,
     assemble_final_video,
+)
+from utils.user_store import (  # type: ignore
+    append_history_item,
+    ensure_user,
+    load_user_history,
+    persist_video_for_user,
 )
 
 
@@ -94,10 +101,147 @@ def main() -> None:
     _ensure_session_state()
     defaults = load_env_defaults()
 
+    # 顶部品牌区：VideoTaxi 出租车 Logo + 标语
+    st.markdown(
+        """
+        <style>
+        .videotaxi-hero {
+            display: flex;
+            align-items: center;
+            gap: 1.5rem;
+            padding: 1.2rem 1.6rem;
+            margin-bottom: 1.0rem;
+            border-radius: 18px;
+            background: radial-gradient(circle at top left, #ff4b4b 0, #111827 45%, #020617 100%);
+            box-shadow: 0 18px 45px rgba(0, 0, 0, 0.55);
+        }
+        .videotaxi-logo-circle {
+            width: 68px;
+            height: 68px;
+            border-radius: 50%;
+            background: radial-gradient(circle at 30% 20%, #ffe66b, #f59e0b 55%, #b45309 100%);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 34px;
+            box-shadow:
+                0 0 24px rgba(248, 250, 252, 0.35),
+                0 0 32px rgba(252, 211, 77, 0.75);
+        }
+        .videotaxi-logo-circle span {
+            filter: drop-shadow(0 0 6px rgba(0,0,0,0.75));
+        }
+        .videotaxi-text {
+            display: flex;
+            flex-direction: column;
+            gap: 0.1rem;
+        }
+        .videotaxi-name {
+            font-size: 32px;
+            font-weight: 900;
+            letter-spacing: 1px;
+            color: #ff4b4b;
+            text-shadow:
+                0 0 10px rgba(248, 113, 113, 0.9),
+                0 0 20px rgba(239, 68, 68, 0.85),
+                0 0 36px rgba(248, 113, 113, 0.75);
+        }
+        .videotaxi-name span {
+            color: #fee2e2;
+        }
+        .videotaxi-tagline {
+            font-size: 18px;
+            font-weight: 600;
+            color: #fee2e2;
+            text-shadow: 0 0 8px rgba(15, 23, 42, 0.95);
+        }
+        .videotaxi-sub {
+            margin-top: 0.25rem;
+            font-size: 13px;
+            color: #9ca3af;
+        }
+        @media (max-width: 768px) {
+            .videotaxi-hero {
+                padding: 0.9rem 1.0rem;
+                gap: 1.0rem;
+            }
+            .videotaxi-name {
+                font-size: 24px;
+            }
+            .videotaxi-tagline {
+                font-size: 15px;
+            }
+            .videotaxi-logo-circle {
+                width: 56px;
+                height: 56px;
+                font-size: 28px;
+            }
+        }
+        </style>
+        <div class="videotaxi-hero">
+          <div class="videotaxi-logo-circle">
+            <span>🚕</span>
+          </div>
+          <div class="videotaxi-text">
+            <div class="videotaxi-name">videoTaxi<span> · 热点短视频引擎</span></div>
+            <div class="videotaxi-tagline">让流量 7×24 小时为你跑单！</div>
+            <div class="videotaxi-sub">一键热点采集 · 文案 + 分镜 + 画面 + 配音 + 字幕全流程自动化</div>
+          </div>
+        </div>
+        """,
+        unsafe_allow_html=True,
+    )
+
+    # 新手一眼就懂的 3 步说明
+    st.info(
+        "新手 3 步走：\n"
+        "1）左侧把你有的 API Key 填上；\n"
+        "2）点击「获取今日抖音热榜」并在表格里选一个话题；\n"
+        "3）在下方选好视频模型和配音后，点「开始一键生成」。\n"
+        "只填 Doubao + DeepSeek + 一种视频模型也可以先体验，其它 Key 以后再补。"
+    )
+
+    # 简单的账号登录（用户名 + 密码），首次输入会自动创建账号
+    if "current_user" not in st.session_state:
+        st.session_state["current_user"] = ""
+    if "auth_message" not in st.session_state:
+        st.session_state["auth_message"] = ""
+
+    with st.container():
+        col_auth, col_msg = st.columns([1.2, 2.0])
+        with col_auth:
+            if st.session_state["current_user"]:
+                st.markdown(
+                    f"**当前用户：** `{st.session_state['current_user']}`"
+                )
+                if st.button("退出登录", key="logout_btn"):
+                    st.session_state["current_user"] = ""
+                    st.session_state["auth_message"] = ""
+            else:
+                st.caption("（可选）登录后会自动保存你的生成记录，只想体验功能可以先不用登录。")
+                with st.form("login_form", clear_on_submit=False):
+                    username = st.text_input("账号（支持中文 / 英文）", key="login_username")
+                    password = st.text_input("密码（首次输入即为注册密码）", type="password", key="login_password")
+                    submitted = st.form_submit_button("登录 / 注册", type="primary", use_container_width=True)
+                if submitted:
+                    ok, msg = ensure_user(username, password)
+                    st.session_state["auth_message"] = msg
+                    if ok:
+                        st.session_state["current_user"] = username.strip()
+
+        with col_msg:
+            if st.session_state.get("auth_message"):
+                st.info(st.session_state["auth_message"])
+
+    # 未登录时仍允许体验，但不会为其持久化历史记录
+    current_user = (st.session_state.get("current_user") or "").strip()
+
     # Sidebar: API Keys + 系统状态
     with st.sidebar:
-        st.header("API Keys 配置")
-        st.caption("在这里配置用于后续步骤的各类大模型 / 数据接口密钥。")
+        st.header("① 填写 API Keys（必填）")
+        st.caption(
+            "至少要填 Doubao + DeepSeek + 一个视频生成 Key，系统才能完整跑完一键生成流程。"
+        )
 
         doubao_key = st.text_input(
             "Doubao (Ark) API Key",
@@ -162,15 +306,16 @@ def main() -> None:
         )
 
     # ---------- 主页面：两步流程 ----------
-    st.title("VideoTaxi 2.0 · 热点短视频一键成片")
     st.caption(
-        "① 选热点话题 → ② 一键生成（豆包写脚本 → DeepSeek 做分镜 → 可灵出多镜头视频+配音）"
+        "整套流程只有两步：① 先从抖音热榜里选一个话题；② 再点下面的「开始一键生成」，中间所有步骤系统会自动完成。"
     )
     st.markdown("---")
 
     # ---------- 步骤 1：选择热点话题 ----------
-    st.subheader("① 选择热点话题")
-    st.caption("先获取今日抖音热榜，在表格中选一个话题作为本支视频的主题。")
+    st.subheader("① 选择热点话题（必做）")
+    st.caption(
+        "先点左侧按钮「获取今日抖音热榜」，再在表格中点选一条你感兴趣的话题，不会选就用排在最前面的一条。"
+    )
     col_controls, col_table = st.columns([1, 2], gap="large")
 
     with col_controls:
@@ -210,22 +355,38 @@ def main() -> None:
     st.markdown("---")
 
     # ---------- 步骤 2：一键生成视频 ----------
-    st.subheader("② 一键生成视频")
+    st.subheader("② 一键生成视频（只需点一次按钮）")
 
     # 让用户在生成前选择文生视频模型：MiniMax（推荐）或 Kling 多镜头
-    st.markdown("**视频生成模型**")
+    st.markdown("**选择视频生成模型**")
     video_model_options = [
         "MiniMax Hailuo 2.3（推荐，单段 6 秒）",
         "Kling-v3 多镜头（原多镜头流程）",
     ]
     default_model = st.session_state.get("video_model") or video_model_options[0]
     video_model = st.selectbox(
-        "选择用于生成画面的模型：",
+        "画面由谁来生成？",
         options=video_model_options,
         index=video_model_options.index(default_model),
-        help="推荐使用 MiniMax Hailuo 2.3：速度较快、适合作为默认模型；如需多镜头更复杂的画面，可以选择 Kling。",
+        help="MiniMax：一条 6 秒短视频，更快更简单；Kling：多镜头 15 秒，效果更复杂，等待时间更长。",
     )
     st.session_state["video_model"] = video_model
+
+    missing_reasons: List[str] = []
+    if not selected_topic:
+        missing_reasons.append("步骤 ① 还没从抖音热榜表格里选中一个话题。")
+    if not doubao_key:
+        missing_reasons.append("左侧未填 Doubao (Ark) API Key（必填，用来写脚本）。")
+    if not deepseek_key:
+        missing_reasons.append("左侧未填 DeepSeek API Key（必填，用来做分镜）。")
+    if video_model.startswith("MiniMax"):
+        if not minimax_key:
+            missing_reasons.append("左侧未填 MiniMax API Key（必填，用来生成画面）。")
+    else:
+        if not (kling_key and kling_secret):
+            missing_reasons.append("左侧未填完整的 Kling Access Key + Secret Key（必填，用来生成画面）。")
+    if not tianxing_key:
+        missing_reasons.append("左侧未填 TianAPI Key（用于拉取抖音热榜，建议填写）。")
 
     disabled_generate = not (
         selected_topic
@@ -237,24 +398,31 @@ def main() -> None:
         )
     )
     if disabled_generate:
-        st.caption(
-            "请先完成 ① 选择话题，并在左侧配置：豆包、DeepSeek、可灵（Access Key + Secret Key）、TianAPI。"
-        )
+        st.warning("当前还不能点击「开始一键生成」，请先完成下面这些：")
+        for reason in missing_reasons:
+            st.write(f"- {reason}")
+        if not missing_reasons:
+            st.caption(
+                "请先完成 ① 选择话题，并在左侧填好豆包、DeepSeek、MiniMax/Kling、TianAPI 的密钥。"
+            )
     else:
         st.caption(
-            "将自动完成：豆包联网写脚本（5 个有逻辑衔接的分镜）→ DeepSeek 转英文 prompt → 可灵生成画面+音效 → 火山 TTS 旁白与可灵音效叠加 + 显眼字幕合成。"
-            "豆包+DeepSeek 约 1～2 分钟，可灵约 2～10 分钟，TTS+合成约 30 秒，总耗时约 4～13 分钟。"
+            "点击按钮后，系统会自动：写脚本 → 设计镜头 → 生成画面 → 配好旁白和中文字幕。"
+            "整个过程大约 4～10 分钟，请耐心等待。"
         )
         st.caption(
-            "**可选 BGM**：在 `.env` 中设置 `BGM_PATH`（本地 MP3 路径）或 `BGM_URL`（直链），可自动混入成片作背景。"
-            " 推荐来源：Pixabay Music、Free Music Archive、爱给网等免费可商用音乐。"
+            "生成过程中请不要关闭本页面或浏览器标签，否则任务会被中断。"
+            "生成成功后，成片和记录会出现在下方「生成结果」和「我的历史记录」，刷新或重新登录都能再找回。"
+        )
+        st.caption(
+            "**可选 BGM**：如需背景音乐，可以在 `.env` 中设置 `BGM_URL`（一条 MP3 直链），系统会自动混入成片。"
         )
 
         # 配音音色选择（豆包语音 2.0）
-        st.markdown("**配音音色（豆包语音 2.0）**")
+        st.markdown("**选择配音声音**")
         st.caption(
-            "说明：上面脚本里的旁白会用这里选择的音色来朗读。\n"
-            "- 通用音色：小天 2.0（默认）、Vivi 2.0、小何 2.0、云舟 2.0\n"
+            "上面生成的旁白，会由你选的声音读出来。\n"
+            "- 常规声音：小天 2.0（默认）、Vivi 2.0、小何 2.0、云舟 2.0\n"
             "- 角色配音：儒雅逸辰、可爱女生、调皮公主、爽朗少年、天才同桌、知性灿灿"
         )
         voice_labels = list(TTS_SPEAKER_PRESETS.keys())
@@ -265,10 +433,10 @@ def main() -> None:
             voice_labels[0],
         )
         selected_label = st.selectbox(
-            "选择一个你想要的配音音色：",
+            "你想用哪种声音来配音？",
             options=voice_labels,
             index=voice_labels.index(default_label),
-            help="选择后：豆包生成的旁白会由该音色朗读，声音风格会影响整体观感。",
+            help="可以多试几种声音风格，看哪种最适合这个话题。",
         )
         selected_speaker_id = TTS_SPEAKER_PRESETS[selected_label]
         st.session_state["tts_speaker"] = selected_speaker_id
@@ -296,6 +464,8 @@ def main() -> None:
                 bgm_path_to_use = None
 
         use_status = hasattr(st, "status")
+        # 进度条：按 4 个大步骤粗略更新 0 → 25 → 50 → 75 → 100
+        progress_bar = st.progress(0)
 
         try:
             if use_status:
@@ -307,6 +477,7 @@ def main() -> None:
                     script = generate_video_script(selected_topic)
                     st.session_state["last_script"] = script
                     status.write(f"脚本标题：{script.get('title', '（未返回）')}")
+                    progress_bar.progress(25)
 
                     # 2. 优化分镜为英文 Prompt
                     status.update(label="步骤 2/4：正在优化分镜（DeepSeek 多镜头 prompt）...", state="running")
@@ -316,6 +487,7 @@ def main() -> None:
                     optimized_prompts = optimize_visual_prompt(scenes)
                     st.session_state["optimized_prompts"] = optimized_prompts
                     status.write("分镜已优化为英文 Prompt（多镜头）。")
+                    progress_bar.progress(50)
 
                     # 等待可灵期间展示脚本与分镜，避免干等
                     status.write("---")
@@ -361,6 +533,7 @@ def main() -> None:
                             timeout=900,
                         )
                     _download_file(video_url, raw_video_path)
+                    progress_bar.progress(75)
 
                     # 4. TTS 旁白 + 与可灵音效叠加 + 显眼字幕合成（豆包 narration 同时用于配音与字幕，保持一致）
                     status.update(label="步骤 4/4：正在生成旁白、混音与字幕（火山 TTS + MoviePy）...", state="running")
@@ -380,16 +553,19 @@ def main() -> None:
                         bgm_path=bgm_path_to_use,
                     )
                     status.update(label="生成完成！可以在下方预览与下载成片（含旁白、字幕与可选 BGM）。", state="complete")
+                    progress_bar.progress(100)
             else:
                 with st.spinner("正在一键生成完整视频，请稍候..."):
                     script = generate_video_script(selected_topic)
                     st.session_state["last_script"] = script
+                    progress_bar.progress(25)
 
                     scenes = script.get("visual_scenes") or []
                     if not isinstance(scenes, list) or not scenes:
                         raise ArkAPIError("模型未返回 visual_scenes，用于视频分镜。")
                     optimized_prompts = optimize_visual_prompt(scenes)
                     st.session_state["optimized_prompts"] = optimized_prompts
+                    progress_bar.progress(50)
 
                     video_url = generate_kling_multishot(
                         optimized_prompts,
@@ -400,6 +576,7 @@ def main() -> None:
                         timeout=900,
                     )
                     _download_file(video_url, raw_video_path)
+                    progress_bar.progress(75)
                     # 豆包 narration 原样用于 TTS 配音与字幕，保证声画一致
                     narration_text = script.get("narration", "")
                     tts_meta = generate_tts_audio(
@@ -416,9 +593,26 @@ def main() -> None:
                         timestamps=tts_meta,
                         bgm_path=bgm_path_to_use,
                     )
+                    progress_bar.progress(100)
 
-            st.session_state["final_video_path"] = str(final_video_path)
-            st.success("短视频生成完成！可以在下方预览与下载（含旁白、字幕与可选 BGM）。")
+            final_path_str = str(final_video_path)
+            st.session_state["final_video_path"] = final_path_str
+            # 为当前登录用户持久化一条历史记录（含成片路径）
+            if current_user:
+                persisted_path = persist_video_for_user(current_user, final_path_str)
+                history_item = {
+                    "created_at": time.time(),
+                    "topic": selected_topic,
+                    "title": script.get("title", ""),
+                    "video_path": persisted_path,
+                    "model": video_model,
+                    "narration_preview": (script.get("narration") or "")[:120],
+                    "script": script,
+                    "optimized_prompts": optimized_prompts,
+                }
+                append_history_item(current_user, history_item)
+            st.balloons()
+            st.success("🎉 短视频生成完成！可以在下方预览与下载（含旁白、字幕与可选 BGM）。")
         except (ArkAPIError, DeepSeekAPIError, KlingAPIError, VolcTTSError, VideoAssembleError) as exc:
             st.error(f"生成流程失败：{exc}")
         except Exception as exc:  # noqa: BLE001
@@ -467,6 +661,51 @@ def main() -> None:
             )
         else:
             st.caption("完成 ② 一键生成后，此处为可灵多镜头视频（含配音）。")
+
+    # ---------- 登录用户的历史记录 ----------
+    if current_user:
+        st.markdown("---")
+        st.subheader("我的历史记录")
+        history = load_user_history(current_user)
+        if not history:
+            st.caption("登录状态下完成一键生成后，你最近的成片会出现在这里。")
+        else:
+            for idx, item in enumerate(history, start=1):
+                title = item.get("title") or item.get("topic") or f"历史记录 {idx}"
+                created_ts = item.get("created_at") or 0
+                try:
+                    created_str = time.strftime(
+                        "%Y-%m-%d %H:%M:%S", time.localtime(float(created_ts))
+                    )
+                except Exception:
+                    created_str = ""
+                subtitle = item.get("topic") or ""
+                model_used = item.get("model") or ""
+                with st.expander(f"{idx}. {title}", expanded=(idx == 1)):
+                    if created_str:
+                        st.caption(f"生成时间：{created_str}")
+                    if subtitle:
+                        st.markdown(f"**话题：** {subtitle}")
+                    if model_used:
+                        st.markdown(f"**模型：** {model_used}")
+                    preview = item.get("narration_preview") or ""
+                    if preview:
+                        st.markdown("**旁白片段预览：**")
+                        st.write(preview + ("…" if len(preview) >= 120 else ""))
+
+                    video_path_hist = item.get("video_path") or ""
+                    if video_path_hist and Path(video_path_hist).is_file():
+                        if st.button(
+                            "加载到上方预览",
+                            key=f"load_history_{idx}",
+                        ):
+                            st.session_state["final_video_path"] = video_path_hist
+                            # 若存有脚本和分镜，也一起恢复，方便查看
+                            if isinstance(item.get("script"), dict):
+                                st.session_state["last_script"] = item["script"]
+                            if isinstance(item.get("optimized_prompts"), list):
+                                st.session_state["optimized_prompts"] = item["optimized_prompts"]
+                            st.experimental_rerun()
 
 
 if __name__ == "__main__":
