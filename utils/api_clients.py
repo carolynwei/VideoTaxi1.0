@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import ast
 import json
 import os
 from typing import Any, Dict, List, Mapping, Optional
@@ -831,13 +832,24 @@ def generate_video_script(
     try:
         parsed: Dict[str, Any] = json.loads(json_candidate)
     except json.JSONDecodeError:
-        # 退回尝试解析原始文本，以防误截断
+        # 尝试使用更宽松的解析（如单引号、尾逗号）
         try:
-            parsed = json.loads(raw_text)
-        except json.JSONDecodeError as exc:
-            print("[ArkAPIError] Model did not return valid JSON. Raw output:")
-            print(raw_text)
-            raise ArkAPIError("Model output is not valid JSON.") from exc
+            parsed = ast.literal_eval(json_candidate)
+            if not isinstance(parsed, dict):
+                raise ValueError("literal_eval did not return dict")
+        except Exception:
+            # 退回尝试解析原始文本，以防误截断
+            try:
+                parsed = json.loads(raw_text)
+            except json.JSONDecodeError:
+                try:
+                    parsed = ast.literal_eval(raw_text)
+                    if not isinstance(parsed, dict):
+                        raise ValueError("literal_eval(raw_text) did not return dict")
+                except Exception as exc:
+                    print("[ArkAPIError] Model did not return valid JSON. Raw output:")
+                    print(raw_text)
+                    raise ArkAPIError("Model output is not valid JSON.") from exc
 
     return parsed
 
