@@ -116,6 +116,10 @@ def load_css() -> None:
         }
 
         /* 背景与主容器：深色渐变 + 轻微光晕 */
+        html, body {
+            background-color: #020617;
+        }
+        [data-testid="stAppViewContainer"],
         [data-testid="stAppViewContainer"] > .main {
             background:
                 radial-gradient(circle at 10% 0%, #1a1a2e 0, #050816 55%, #020617 100%);
@@ -127,6 +131,7 @@ def load_css() -> None:
         main.block-container {
             padding-top: 1.4rem;
             padding-bottom: 2.4rem;
+            background-color: transparent !important;
         }
 
         /* 调整所有文字默认颜色（避免过灰） */
