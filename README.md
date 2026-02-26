@@ -3,10 +3,10 @@
 VideoTaxi 2.0 是一个「一键生成热点搞笑短视频」的小工具，完整打通了：
 
 1. 获取抖音热榜
-2. Doubao / Ark 生成脚本（标题 + 旁白 + 分镜）
+2. Ark 大模型（Kimi / 豆包）生成脚本（标题 + 旁白 + 分镜，Kimi 支持联网搜索）
 3. DeepSeek 优化分镜为英文 Prompt
 4. 可灵 Kling 生成文生视频
-5. 火山引擎 TTS 生成搞怪语音（可选字级时间戳）
+5. 豆包语音 2.0（WebSocket）生成旁白语音（可选字级时间戳）
 6. MoviePy 自动剪辑，合成带字幕的最终 MP4
 
 本说明文档主要介绍代码结构、关键模块和运行方式。
@@ -50,9 +50,10 @@ pip install -r requirements.txt
 # --- 聚合数据与搜索 ---
 TIANAPI_KEY=你的天行数据抖音热榜key
 
-# --- Doubao / Ark 大模型 ---
-ARK_API_KEY=你的火山豆包Ark API Key
-ARK_MODEL_ID=你的Ark模型ID（如 doubao-seed-1-8-xxxxxx）
+# --- 脚本生成（火山方舟 Ark：Kimi / 豆包）---
+ARK_API_KEY=你的火山方舟 Ark API Key
+# 推荐 Kimi 联网写脚本，减少编造；豆包可改为 doubao-1.5-pro-32k 等
+ARK_MODEL_ID=kimi-k2-thinking-251104
 
 # --- DeepSeek 提示词优化 ---
 DEEPSEEK_API_KEY=你的DeepSeek API Key
@@ -61,10 +62,14 @@ DEEPSEEK_API_KEY=你的DeepSeek API Key
 KLING_ACCESS_KEY=你的Kling API Key
 KLING_SECRET_KEY=（如平台要求可选）
 
-# --- 语音合成（火山引擎 TTS）---
-VOLC_APPID=你的火山AppId（用作 appkey）
-VOLC_ACCESS_TOKEN=你的火山访问 token
-VOLC_CLUSTER_ID=volcano_tts
+# --- 语音合成（豆包语音 2.0 WebSocket）---
+VOLC_APPID=火山控制台-豆包语音-APP ID
+VOLC_ACCESS_TOKEN=火山控制台-豆包语音-Access Token
+
+# --- 可选 BGM（洗脑神曲等，自动混入成片作背景）---
+BGM_PATH=本地 MP3 文件路径（与 BGM_URL 二选一）
+# 或
+BGM_URL=直链 MP3 地址（如从 Pixabay Music、爱给网 等下载的免费可商用音乐）
 
 # --- FFmpeg 路径（可选）---
 FFMPEG_CMD=E:\ffmpeg\ffmpeg.exe
@@ -80,7 +85,7 @@ FFMPEG_CMD=E:\ffmpeg\ffmpeg.exe
   Streamlit 主入口，负责 UI 和整体流程编排。
 
 - `utils/api_clients.py`  
-  - `generate_video_script(topic)`：调用 Doubao / Ark，生成 JSON 结构的短视频脚本：
+  - `generate_video_script(topic)`：根据 ARK_MODEL_ID 调用 Kimi（Responses API + web_search）或豆包（Chat Completions），生成 JSON 脚本：
     - `title`：视频标题
     - `narration`：旁白文案（搞笑风格）
     - `visual_scenes`：中文分镜列表
@@ -95,7 +100,7 @@ FFMPEG_CMD=E:\ffmpeg\ffmpeg.exe
     2. 每 10 秒轮询 `GET .../text2video/{task_id}`，直到状态成功或失败
     3. 成功时返回视频下载 URL，失败或超时抛出 `KlingAPIError`
   - `generate_tts_audio(text, output_path, enable_timestamp=True)`：  
-    使用火山引擎 TTS HTTP API：
+    使用豆包语音 2.0 WebSocket API：
     - `speaker` 固定为适合搞笑短视频的音色（如 `zh_male_sunwukong_clone2`）
     - 请求体中开启 `audio_config.enable_timestamp = true`  
       若后端支持，将在 `payload` 中返回：
@@ -113,7 +118,7 @@ FFMPEG_CMD=E:\ffmpeg\ffmpeg.exe
     3. 若视频比音频长：裁剪视频到音频时长
     4. 设置音轨为 TTS 音频
     5. 字幕逻辑：
-       - 若提供 `timestamps`（火山 TTS payload）：  
+       - 若提供 `timestamps`（豆包语音返回的 words）：  
          按字级 `start_time` / `end_time` 生成黄色描边大字字幕，底部居中逐字滚动。
        - 若没有时间戳：  
          将 `script_text` 按句号等符号粗略分句，按视频时长平均分配时间段，作为分段文案字幕。
@@ -122,7 +127,7 @@ FFMPEG_CMD=E:\ffmpeg\ffmpeg.exe
 - `temp/`  
   中间与最终的媒体文件输出目录：
   - `kling_raw.mp4`：可灵生成的原始视频
-  - `tts_audio.mp3`：火山 TTS 生成的音频
+  - `tts_audio.mp3`：豆包语音 2.0 生成的音频
   - `final_video.mp4`：MoviePy 合成后的最终成片
 
 ---
@@ -132,7 +137,7 @@ FFMPEG_CMD=E:\ffmpeg\ffmpeg.exe
 `app.py` 是整个项目的「中控台」，大致分为三块：
 
 - **侧边栏：Key 配置 + 系统状态**
-  - 读取 `.env` 与 `st.secrets` 预填 Doubao / DeepSeek / Kling / TianAPI Key。
+  - 读取 `.env` 与 `st.secrets` 预填 Ark（Kimi/豆包）/ DeepSeek / Kling / TianAPI Key。
   - 显示每个服务是否「✅ 已配置」或「⚠️ 未配置」。
 
 - **主区域上半部分：抖音热榜**
@@ -143,7 +148,7 @@ FFMPEG_CMD=E:\ffmpeg\ffmpeg.exe
 - **主区域下半部分：一键生成短视频**
   点击「开始一键生成」后，流程如下：
 
-1. **生成脚本（Doubao / Ark）**  
+1. **生成脚本（Ark：Kimi 或豆包）**  
    - 调用 `generate_video_script(selected_topic)`  
    - 得到标题、搞笑旁白与中文分镜。
 
@@ -151,7 +156,7 @@ FFMPEG_CMD=E:\ffmpeg\ffmpeg.exe
    - 调用 `optimize_visual_prompt(visual_scenes)`  
    - 每条中文分镜对应一个英文 Prompt，用于可灵视频生成。
 
-3. **生成视频 + 语音（Kling + 火山 TTS）**  
+3. **生成视频 + 语音（Kling + 豆包语音 2.0）**  
    - 用优化后 Prompt 拼成一个长 prompt：
      - 调用 `generate_kling_video(prompt)`，拿到视频 URL 并下载到 `temp/kling_raw.mp4`。
    - 用旁白文案调用 `generate_tts_audio(narration, "temp/tts_audio.mp3", enable_timestamp=True)`：

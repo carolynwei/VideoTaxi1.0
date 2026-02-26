@@ -1,49 +1,39 @@
-from pprint import pprint
+from pathlib import Path
 
-from dotenv import load_dotenv
-
-from utils.api_clients import (
-    ArkAPIError,
-    TianAPIError,
-    generate_video_script,
-    get_douyin_hot_trends,
-)
+from PIL import Image, ImageDraw, ImageFont  # 确保已安装：pip install pillow
 
 
 def main() -> None:
-    load_dotenv()
+    font_path = r"E:\VideoTaxi2.0\LXGWWenKai-Light.ttf"  # 或你现在 .env 里的 SUBTITLE_FONT_PATH
+    if not Path(font_path).is_file():
+        print("字体文件不存在：", font_path)
+        return
+
+    print("使用字体：", font_path)
+
+    # 创建一张图片
+    img = Image.new("RGB", (800, 240), (0, 0, 0))
+    draw = ImageDraw.Draw(img)
 
     try:
-        # 1. 获取抖音热榜 Top 1
-        trends = get_douyin_hot_trends(limit=1)
-    except TianAPIError as e:
-        print(f"获取抖音热榜失败: {e}")
-        return
-    except KeyError as e:
-        print(f"配置缺失（TIANAPI_KEY）: {e}")
+        font = ImageFont.truetype(font_path, 60)
+    except Exception as e:
+        print("ImageFont.truetype 加载失败：", e)
         return
 
-    if not trends:
-        print("未从天行数据接口获取到任何抖音热榜数据。")
-        return
+    text = "测试中文 123 ABC\n这是第二行：旁白字幕测试"
+    # 在 (40, 60) 位置画字
+    draw.multiline_text(
+        (40, 60),
+        text,
+        font=font,
+        fill=(255, 255, 0),
+        align="left",
+    )
 
-    top_topic = trends[0]["title"]
-    hot_value = trends[0]["hot"]
-    print(f"当前抖音热榜第一名话题: {top_topic} (热度: {hot_value})")
-
-    # 2. 将热榜第一名传给豆包生成结构化剧本
-    try:
-        script_json = generate_video_script(top_topic)
-    except ArkAPIError as e:
-        print(f"调用豆包生成剧本失败: {e}")
-        return
-    except KeyError as e:
-        print(f"配置缺失（ARK_API_KEY / ARK_MODEL_ID）: {e}")
-        return
-
-    # 3. 打印 JSON 结果
-    print("=== 生成的结构化短视频剧本 JSON ===")
-    pprint(script_json)
+    out = Path("pil_font_test.png")
+    img.save(out)
+    print("已生成：", out)
 
 
 if __name__ == "__main__":

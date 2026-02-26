@@ -28,3 +28,6 @@ Thumbs.db
 .venv/
 __pycache__/
 *.pyc
+*.mp4
+temp/
+*.png
