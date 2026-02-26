@@ -1095,14 +1095,26 @@ def optimize_visual_prompt(chinese_scenes_list: List[str], *, temperature: float
         raise DeepSeekAPIError("Model output JSON list must contain only strings.")
 
     if len(parsed) != len(chinese_scenes_list):
-        # Not fatal to print mismatch; still raise for strictness
+        # 尽量容错：长度不一致时，打印告警并做截断/补齐，而不是直接中断整条生成链路。
         print(
-            f"[DeepSeekAPIError] Output length ({len(parsed)}) does not match "
-            f"input length ({len(chinese_scenes_list)})."
+            f"[DeepSeekAPIWarning] Output length ({len(parsed)}) does not match "
+            f"input length ({len(chinese_scenes_list)}). Will normalize length."
         )
-        raise DeepSeekAPIError(
-            "Model output list length does not match input scenes list length."
-        )
+        if not parsed:
+            raise DeepSeekAPIError(
+                "Model output JSON list is empty; cannot build any visual prompts."
+            )
+        normalized: List[str] = []
+        # 先按顺序匹配最短长度部分
+        common_len = min(len(parsed), len(chinese_scenes_list))
+        normalized.extend(parsed[:common_len])
+        # 如果 DeepSeek 少返回了若干条，用最后一条 prompt 轻微变体补齐剩余镜头，保证长度一致
+        if len(parsed) < len(chinese_scenes_list):
+            last_prompt = parsed[-1]
+            for idx in range(common_len, len(chinese_scenes_list)):
+                normalized.append(f"{last_prompt} // variation for extra scene {idx + 1}")
+        # 如果 DeepSeek 多返回了若干条，直接丢弃多余的，保留与输入场景数一致的部分
+        return normalized
 
     return parsed
 
