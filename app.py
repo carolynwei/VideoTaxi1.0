@@ -166,6 +166,21 @@ def load_css() -> None:
         [data-testid="stExpander"] * {
             color: #e5e7eb !important;
         }
+        /* 折叠面板标题（如历史记录 / 分镜等）加粗放大，增强可读性 */
+        [data-testid="stExpander"] summary,
+        [data-testid="stExpander"] button {
+            font-size: 14px !important;
+            font-weight: 700 !important;
+            color: #f9fafb !important;
+            text-shadow: 0 0 6px rgba(15, 23, 42, 0.9);
+        }
+        /* 折叠面板标题 hover / 展开时再提亮一点，便于视觉定位 */
+        [data-testid="stExpander"]:hover summary,
+        [data-testid="stExpander"][aria-expanded="true"] summary,
+        [data-testid="stExpander"]:hover button,
+        [data-testid="stExpander"][aria-expanded="true"] button {
+            color: #fefce8 !important;
+        }
 
         /* 信息提示（登录成功等）深色化 */
         [data-testid="stAlert"] {
@@ -842,9 +857,7 @@ def main() -> None:
         # 已在 .env 或 Streamlit secrets 中配置的 Key，不再在页面回显具体值，只提示已配置状态。
         if defaults["doubao"]:
             doubao_key = defaults["doubao"]
-            st.write(
-                "Doubao (Ark) API Key：✅ 已配置（值已隐藏，如需修改请在 .env 或 secrets.toml 中更新 ARK_API_KEY）"
-            )
+            st.write("Doubao (Ark) API Key：✅ 已配置（值已隐藏）")
         else:
             doubao_key = st.text_input(
                 "Doubao (Ark) API Key",
@@ -853,9 +866,7 @@ def main() -> None:
 
         if defaults["deepseek"]:
             deepseek_key = defaults["deepseek"]
-            st.write(
-                "DeepSeek API Key：✅ 已配置（值已隐藏，如需修改请在配置文件中更新 DEEPSEEK_API_KEY）"
-            )
+            st.write("DeepSeek API Key：✅ 已配置（值已隐藏）")
         else:
             deepseek_key = st.text_input(
                 "DeepSeek API Key",
@@ -864,9 +875,7 @@ def main() -> None:
 
         if defaults["minimax"]:
             minimax_key = defaults["minimax"]
-            st.write(
-                "MiniMax API Key（视频生成）：✅ 已配置（值已隐藏，如需修改请在配置文件中更新 ANTHROPIC_API_KEY）"
-            )
+            st.write("MiniMax API Key（视频生成）：✅ 已配置（值已隐藏）")
         else:
             minimax_key = st.text_input(
                 "MiniMax API Key（视频生成）",
@@ -876,9 +885,7 @@ def main() -> None:
 
         if defaults["kling"]:
             kling_key = defaults["kling"]
-            st.write(
-                "Kling Access Key：✅ 已配置（值已隐藏，如需修改请在配置文件中更新 KLING_ACCESS_KEY）"
-            )
+            st.write("Kling Access Key：✅ 已配置（值已隐藏）")
         else:
             kling_key = st.text_input(
                 "Kling Access Key",
@@ -888,9 +895,7 @@ def main() -> None:
 
         if defaults["kling_secret"]:
             kling_secret = defaults["kling_secret"]
-            st.write(
-                "Kling Secret Key：✅ 已配置（值已隐藏，如需修改请在配置文件中更新 KLING_SECRET_KEY）"
-            )
+            st.write("Kling Secret Key：✅ 已配置（值已隐藏）")
         else:
             kling_secret = st.text_input(
                 "Kling Secret Key",
@@ -900,9 +905,7 @@ def main() -> None:
 
         if defaults["tianxing"]:
             tianxing_key = defaults["tianxing"]
-            st.write(
-                "TianAPI Key（用于抖音热榜）：✅ 已配置（值已隐藏，如需修改请在配置文件中更新 TIANAPI_KEY）"
-            )
+            st.write("TianAPI Key（用于抖音热榜）：✅ 已配置（值已隐藏）")
         else:
             tianxing_key = st.text_input(
                 "TianAPI Key（用于抖音热榜）",
@@ -1167,20 +1170,21 @@ def main() -> None:
                     status.write("分镜已优化为英文 Prompt（多镜头）。")
                     progress_bar.progress(50)
 
-                    # 等待可灵期间展示脚本与分镜，避免干等
+                    # 等待生成期间提供可选的脚本预览，默认收起，避免占满状态区域
                     status.write("---")
-                    status.write("**📄 脚本预览**（可灵生成约 2～10 分钟，可先看下方内容）")
-                    status.write(f"**标题：** {script.get('title', '')}")
-                    narration_preview = (script.get("narration") or "")[:300]
-                    if len(script.get("narration") or "") > 300:
-                        narration_preview += "…"
-                    status.write(f"**旁白：** {narration_preview}")
-                    status.write("**中文分镜：**")
-                    for idx, s in enumerate(script.get("visual_scenes") or [], start=1):
-                        status.write(f"  {idx}. {s}")
-                    status.write("**英文分镜（用于生成画面）：**")
-                    for idx, p in enumerate(optimized_prompts, start=1):
-                        status.write(f"  {idx}. {p[:100]}{'…' if len(p) > 100 else ''}")
+                    with st.expander("📄 脚本预览（豆包脚本 + 分镜，可选）", expanded=False):
+                        st.markdown(f"**标题：** {script.get('title', '')}")
+                        narration_preview = (script.get("narration") or "")[:300]
+                        if len(script.get("narration") or "") > 300:
+                            narration_preview += "…"
+                        st.markdown("**旁白预览：**")
+                        st.write(narration_preview)
+                        st.markdown("**中文分镜：**")
+                        for idx, s in enumerate(script.get("visual_scenes") or [], start=1):
+                            st.write(f"{idx}. {s}")
+                        st.markdown("**英文分镜（用于生成画面）：**")
+                        for idx, p in enumerate(optimized_prompts, start=1):
+                            st.write(f"{idx}. {p[:100]}{'…' if len(p) > 100 else ''}")
 
                     # 3. 可灵多镜头视频（画面+音效/环境音，与 TTS 旁白叠加为背景）
                     status.update(
@@ -1307,18 +1311,18 @@ def main() -> None:
 
     col_script, col_video = st.columns(2, gap="large")
     with col_script:
-        st.markdown("**豆包脚本**")
-        if not last_script:
-            st.caption("完成 ② 一键生成后，此处显示标题、旁白与中文分镜。")
-        else:
-            st.markdown(f"**标题：** {last_script.get('title', '')}")
-            st.markdown("**旁白：**")
-            st.write(last_script.get("narration", ""))
-            scenes = last_script.get("visual_scenes") or []
-            if isinstance(scenes, list) and scenes:
-                st.markdown("**中文分镜：**")
-                for idx, s in enumerate(scenes, start=1):
-                    st.write(f"{idx}. {s}")
+        with st.expander("豆包脚本", expanded=False):
+            if not last_script:
+                st.caption("完成 ② 一键生成后，此处显示标题、旁白与中文分镜。")
+            else:
+                st.markdown(f"**标题：** {last_script.get('title', '')}")
+                st.markdown("**旁白：**")
+                st.write(last_script.get("narration", ""))
+                scenes = last_script.get("visual_scenes") or []
+                if isinstance(scenes, list) and scenes:
+                    st.markdown("**中文分镜：**")
+                    for idx, s in enumerate(scenes, start=1):
+                        st.write(f"{idx}. {s}")
 
         if optimized_prompts:
             with st.expander("DeepSeek 英文分镜（用于生成画面）", expanded=False):
@@ -1385,7 +1389,11 @@ def main() -> None:
                                 st.session_state["last_script"] = item["script"]
                             if isinstance(item.get("optimized_prompts"), list):
                                 st.session_state["optimized_prompts"] = item["optimized_prompts"]
-                            st.experimental_rerun()
+                            # 兼容新版 Streamlit（st.rerun）与旧版 experimental_rerun
+                            if hasattr(st, "rerun"):
+                                st.rerun()
+                            elif hasattr(st, "experimental_rerun"):
+                                st.experimental_rerun()
 
 
 if __name__ == "__main__":

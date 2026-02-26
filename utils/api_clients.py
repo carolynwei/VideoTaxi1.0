@@ -643,7 +643,15 @@ def generate_video_script(topic: str, *, timeout: int = 90) -> Dict[str, Any]:
             "  - 绝对禁止出现：新闻演播室、主播、看手机屏幕、看报纸的无聊画面。\n"
             "  - 绝对禁止包含任何文字描述（如“招牌上写着”、“屏幕显示成绩”），必须用纯视觉动作替代（如“双手颤抖地敲击发光的键盘”、“脸色煞白瘫倒在地”）。\n"
             "  - 5 个画面要像一部微电影的分镜，层层递进（起->承->转->合->彩蛋）。\n\n"
-            "请确保返回合法 JSON，字段名为英文，不在 JSON 外添加任何文字。"
+            "【输出格式硬性要求——务必严格遵守】\n"
+            "1. 你必须只输出一个 JSON 值，不允许在 JSON 外多输出任何文字、解释、注释、示例、Markdown 代码块等内容。\n"
+            "2. JSON 顶层类型必须是对象，字段名一律使用英文双引号包裹。\n"
+            "3. 所有字符串必须用双引号包裹，禁止使用单引号；禁止在 JSON 中添加注释。\n"
+            "4. 禁止出现结尾多余逗号（trailing comma），数组和对象的最后一个元素后面都不能有逗号。\n"
+            "5. 如果无法完全满足业务要求，也要返回一个语法上完全合法的 JSON，并在某些字段里用简短中文说明原因，而不是乱写格式。\n"
+            "6. 严禁输出形如 ```json、``` 之类的 Markdown 包裹，只能输出纯 JSON 文本本身。\n"
+            "7. 如果你想输出多段内容，一律合并进同一个 JSON 对象中，不要分多段输出。\n"
+            "请确保最终返回的内容是语法严格合法的 JSON。"
         )
 
         user_prompt = (
@@ -696,7 +704,15 @@ def generate_video_script(topic: str, *, timeout: int = 90) -> Dict[str, Any]:
             "  - visual_scenes：共 5 条。每条是基于「搜索到的客观事实」提炼出的画面要点/素材点（例如：某场景、某事件瞬间、某数据对应的画面联想），"
             "    不要求你写完整分镜剧本，具体镜头设计由下游完成；但要点之间要有逻辑顺序（起因→发展→转折或递进），便于后续做成连贯小故事。\n"
             "  - bgm_style：根据话题情绪选一个风格。\n\n"
-            "请确保返回合法 JSON，字段名为英文，且不在 JSON 外添加任何文字。"
+            "【输出格式硬性要求——务必严格遵守】\n"
+            "1. 你必须只输出一个 JSON 值，不允许在 JSON 外多输出任何文字、解释、注释、示例、Markdown 代码块等内容。\n"
+            "2. JSON 顶层类型必须是对象，字段名一律使用英文双引号包裹。\n"
+            "3. 所有字符串必须用双引号包裹，禁止使用单引号；禁止在 JSON 中添加注释。\n"
+            "4. 禁止出现结尾多余逗号（trailing comma），数组和对象的最后一个元素后面都不能有逗号。\n"
+            "5. 如果无法完全满足业务要求，也要返回一个语法上完全合法的 JSON，并在某些字段里用简短中文说明原因，而不是乱写格式。\n"
+            "6. 严禁输出形如 ```json、``` 之类的 Markdown 包裹，只能输出纯 JSON 文本本身。\n"
+            "7. 如果你想输出多段内容，一律合并进同一个 JSON 对象中，不要分多段输出。\n"
+            "请确保最终返回的内容是语法严格合法的 JSON。"
         )
 
         user_prompt = (
@@ -958,7 +974,14 @@ def optimize_visual_prompt(chinese_scenes_list: List[str], *, temperature: float
         "- Return ONLY a valid JSON array of strings.\n"
         "- Exactly one string per input scene, preserving the original order.\n"
         "- Maximum 512 characters per string.\n"
-        "- NO conversational text, NO explanations, NO Markdown formatting outside the JSON array."
+        "- NO conversational text, NO explanations, NO Markdown formatting outside the JSON array.\n\n"
+        "### STRICT JSON RULES (MUST FOLLOW)\n"
+        "1. You must output a single JSON value only, with no extra text, comments, examples, or Markdown code fences like ```json or ``` around it.\n"
+        "2. The top-level JSON type must be an array; each element must be a string.\n"
+        "3. All strings must use double quotes; never use single quotes inside the JSON syntax.\n"
+        "4. Do NOT add trailing commas after the last element in arrays.\n"
+        "5. If you cannot perfectly satisfy the content requirements, you still must return syntactically valid JSON and use short English explanations inside the strings themselves if needed.\n"
+        "6. Never wrap the JSON array in any additional text or Markdown formatting; the output must be pure JSON."
     )
 
     user_prompt = (
