@@ -98,12 +98,28 @@ def fetch_topic_facts_with_exa(topic: str, *, max_chars: int = 8000) -> str:
         print(f"[ExaAPIError] {exc}")
         return ""
 
+    # 为严肃新闻 / 深度科普模式优化的 Exa 检索：
+    # - 使用 deep 模式做多视角深度搜索
+    # - 扩大 num_results，覆盖更多权威来源
+    # - 通过自然语言 query 明确要求“权威新闻/官方/研究机构”，过滤低质内容
+    # - 使用 highlights 而不是整页全文，减小下游大模型的上下文压力
+    query = (
+        f"与「{topic}」相关的最新客观事实、权威新闻报道、官方公告和核心数据，"
+        "优先返回来自政府机构、主流新闻媒体、研究机构和官方数据网站的页面，"
+        "尽量避免内容农场、自媒体软文和纯营销广告，中文结果优先。"
+    )
+
     try:
         results = client.search(
-            query=f"与「{topic}」相关的最新事实、新闻事件、数据和背景信息，中文结果优先",
-            type="auto",
-            num_results=6,
-            contents={"text": {"max_characters": 2000}},
+            query=query,
+            type="deep",
+            num_results=12,
+            # 使用 highlights 返回每个页面中最相关的精华片段，避免整页长文造成 token 爆炸
+            contents={
+                "highlights": {
+                    "max_characters": 600,
+                }
+            },
         )
     except Exception as exc:  # pragma: no cover - 网络/服务错误
         print(f"[ExaAPIError] 搜索失败: {exc}")
@@ -113,9 +129,16 @@ def fetch_topic_facts_with_exa(topic: str, *, max_chars: int = 8000) -> str:
     for i, r in enumerate(results.results, start=1):
         title = (getattr(r, "title", "") or "").strip()
         url = (getattr(r, "url", "") or "").strip()
-        snippet = (getattr(r, "text", "") or "").strip()
+        # 新版 Exa 在使用 contents.highlights 时，会把高亮文本挂在 highlights 或 text 字段上
+        highlights = getattr(r, "highlights", None)
+        if isinstance(highlights, list) and highlights:
+            snippet = " ".join(str(h).strip() for h in highlights if str(h).strip())
+        else:
+            snippet = (getattr(r, "text", "") or "").strip()
+
         if not (title or snippet):
             continue
+
         block = f"[资料 {i}] {title}\n来源：{url}\n内容概括：{snippet}\n"
         lines.append(block)
 
@@ -301,7 +324,8 @@ def _call_ark_responses_with_web_search(
     payload: Dict[str, Any] = {
         "model": model_id,
         "stream": stream,
-        "tools": [{"type": "web_search", "max_keyword": 3}],
+        # 提高 max_keyword，鼓励模型为 web_search 拆分出更多检索词，以覆盖更多信息源
+        "tools": [{"type": "web_search", "max_keyword": 6}],
         "input": [
             {
                 "role": "user",
@@ -589,60 +613,101 @@ def generate_video_script(topic: str, *, timeout: int = 90) -> Dict[str, Any]:
 
     model_id = _get_config_value("ARK_MODEL_ID")
 
-    # 若是 Kimi 模型，先用 Exa 补一批事实材料，供后续脚本生成参考
-    exa_facts = ""
-    if "kimi" in model_id.lower():
+    use_responses_api = "kimi" in model_id.lower()
+
+    if use_responses_api:
+        # Kimi 场景：不做资料收集，只负责脑洞故事改编
+        system_prompt = (
+            "你是一名顶级的抖音爆款短视频编剧和视觉导演。你的任务是不做任何枯燥的资料收集，"
+            "直接将给定的【新闻热点话题】进行“脑洞化”或“平民化”的改编，虚构一个有趣、有张力且逻辑自洽的30秒短故事。\n\n"
+            "【核心创作策略：如何把硬新闻变有趣？】\n"
+            "遇到宏大抽象的新闻（如国际关系、金融、政策），你必须使用以下两种策略之一：\n"
+            "1. 视觉隐喻（高概念）：例如“美收割虚拟货币”，不要写看新闻，而是写一个赛博朋克农场里，巨型外星收割机正在吸走地里的发光金币，小韭菜在一旁痛哭。\n"
+            "2. 平民微喜剧（接地气）：例如“四六级成绩公布”，写一个大学生为了查分在宿舍摆阵施法，结果网页崩溃的爆笑反转。\n\n"
+            "【创作目标】\n"
+            "1. 故事必须完全虚构，有戏剧性、有梗。不要复述新闻事实，要把新闻变成故事的“灵感内核”。\n"
+            "2. 结构紧凑：起因（抛出悬念）- 发展（夸张动作）- 转折（意想不到）- 结局（神来之笔）。\n"
+            "3. 整体风格适合抖音，节奏极快，可以搞笑、脑洞反转或轻悬疑。\n\n"
+            "【输出格式】严格按下列 JSON 结构输出，且只输出 JSON，无额外说明或 Markdown：\n"
+            "{\n"
+            '  "title": "视频标题（要有网感，带点标题党）",\n'
+            '  "narration": "旁白文案（约30秒，极度口语化，多用短句、感叹句。吐槽或讲故事的口吻，绝不能像新闻播报）",\n'
+            '  "visual_scenes": ["画面要点1", "画面要点2", "画面要点3", "画面要点4", "画面要点5"],\n'
+            '  "bgm_style": "搞笑/反转/悬疑/史诗"\n'
+            "}\n\n"
+            "【narration（旁白）的写法要求】\n"
+            "  - 必须是完整的配音文案，用句号、问号、感叹号清晰断句，每句 7～20 个字。\n"
+            "  - 旁白要负责把 5 个画面串起来，情绪起伏要大。\n\n"
+            "【visual_scenes（画面）的致命约束（必须严格遵守）】\n"
+            "  - 这是给AI视频模型（如可灵、MiniMax）的画面提示，所以描述必须是具体的【实体对象+动作+环境】！\n"
+            "  - 绝对禁止出现：新闻演播室、主播、看手机屏幕、看报纸的无聊画面。\n"
+            "  - 绝对禁止包含任何文字描述（如“招牌上写着”、“屏幕显示成绩”），必须用纯视觉动作替代（如“双手颤抖地敲击发光的键盘”、“脸色煞白瘫倒在地”）。\n"
+            "  - 5 个画面要像一部微电影的分镜，层层递进（起->承->转->合->彩蛋）。\n\n"
+            "请确保返回合法 JSON，字段名为英文，不在 JSON 外添加任何文字。"
+        )
+
+        user_prompt = (
+            f"当前抖音热点话题：【{topic.strip()}】。\n"
+            "请把这个话题当成灵感内核，完全虚构一个围绕该话题的短视频小故事。不要查找资料，放飞你的脑洞！\n"
+            "请按照 JSON 结构返回结果：visual_scenes 必须是 5 条纯视觉动作描述（绝不能有文字或屏幕画面）；"
+            "narration 写成口语化、情绪饱满的爆款旁白。"
+        )
+    else:
+        # 非 Kimi 场景仍然可以使用事实材料与联网搜索的思路
+        exa_facts = ""
         try:
             exa_facts = fetch_topic_facts_with_exa(topic)
         except Exception as exc:  # pragma: no cover
             print(f"[ExaAPIError] 获取话题事实失败: {exc}")
             exa_facts = ""
 
-    system_prompt = (
-        "你的角色是「联网事实与素材采集员」，后端已开启 enable_web_search。"
-        "核心任务：针对给定的抖音热点话题，通过联网搜索获取客观、可验证的事实与素材，"
-        "并整理成结构化输出，供后续环节做镜头设计与旁白撰写。\n\n"
-        "【以下是已为你整理好的外部事实材料（来自 Exa 实时搜索），请优先基于这些材料创作，"
-        "如与你自己的搜索结果不一致，以这些材料为准，避免凭空编造：】\n"
-        f"{exa_facts if exa_facts else '（未能额外获取到外部事实，请仅在确信的范围内回答，不要编造具体事实。）'}\n\n"
-        "【必须执行的步骤】\n"
-        "1. 联网搜索：针对该话题搜索最新报道、数据、时间线、当事人/机构、网友热议点、官方说法等。\n"
-        "2. 只采用可验证的客观信息：人物、时间、地点、数字、事件经过、结果等尽量来自搜索结果；"
-        "若某条信息搜不到或无法核实，不要编造，可在表述中保留「据报」「有说法称」等限定。\n"
-        "3. 当前时间背景为 2026 年：理解为「故事发生在 2026 年左右」即可，"
-        "避免写出具体的日历日期或精确时间（例如「2026年3月12日上午九点」），"
-        "如需提到时间，请用「最近」「这段时间」「不久前」等模糊表达，不要编造具体年月日和几点几分。\n\n"
-        "【输出要求】严格按下列 JSON 结构输出，且只输出 JSON，无额外说明或 Markdown：\n\n"
-        "{\n"
-        '  "title": "视频标题",\n'
-        '  "narration": "旁白文案（约30秒，口语化、搞笑幽默；内容须基于你搜到的客观事实，可含具体数据、时间、人物）",\n'
-        '  "visual_scenes": ["画面要点1", "画面要点2", "画面要点3", "画面要点4", "画面要点5"],\n'
-        '  "bgm_style": "搞笑/反转/悬疑"\n'
-        "}\n\n"
-        "【narration 的用途与写法】\n"
-        "narration 是你输出的「旁白文案」，会原样传递给后续流程，同时用于：① 语音合成（TTS 配音）；② 画面上的字幕。"
-        "因此必须按「适合配音 + 字幕」的写法：用句号、感叹号、问号明确断句，每句长度适中（建议 7～20 字一句），"
-        "便于下游按句切字幕或按字打轴，观众听和看的是同一份文案。\n\n"
-        "字段说明：\n"
-        "  - title：基于该话题与搜索到的最新热梗/讨论角度拟标题，不泄露个人隐私。\n"
-        "  - narration：整段旁白，与 5 个画面要点顺序对应；尽量塞入你搜到的客观事实（数据、时间、人物、结果），保持口语化和幽默感；"
-        "断句清晰、每句不宜过长，以便直接用于配音与字幕。\n"
-        "  - visual_scenes：共 5 条。每条是基于「搜索到的客观事实」提炼出的画面要点/素材点（例如：某场景、某事件瞬间、某数据对应的画面联想），"
-        "    不要求你写完整分镜剧本，具体镜头设计由下游完成；但要点之间要有逻辑顺序（起因→发展→转折或递进），便于后续做成连贯小故事。\n"
-        "  - bgm_style：根据话题情绪选一个风格。\n\n"
-        "请确保返回合法 JSON，字段名为英文，且不在 JSON 外添加任何文字。"
-    )
+        system_prompt = (
+            "你的角色是「联网事实与素材采集员」，后端已开启 enable_web_search。"
+            "核心任务：针对给定的抖音热点话题，通过联网搜索获取客观、可验证的事实与素材，"
+            "并整理成结构化输出，供后续环节做镜头设计与旁白撰写。\n\n"
+            "【以下是已为你整理好的外部事实材料（来自 Exa 实时搜索），请优先基于这些材料创作，"
+            "如与你自己的搜索结果不一致，以这些材料为准，避免凭空编造：】\n"
+            f"{exa_facts if exa_facts else '（未能额外获取到外部事实，请仅在确信的范围内回答，不要编造具体事实。）'}\n\n"
+            "【必须执行的步骤】\n"
+            "1. 联网搜索：务必先多轮使用 web_search 工具，针对该话题拆分出若干子问题，"
+            "用不同的中文/英文关键词搜索最新报道、数据、时间线、当事人/机构、网友热议点、官方说法等；"
+            "优先选择权威新闻媒体、官方渠道和数据网站，忽略广告、营销软文和无来源的自媒体内容。\n"
+            "2. 只采用可验证的客观信息：人物、时间、地点、数字、事件经过、结果等必须以多个搜索结果为依据，"
+            "关键事实尽量做到至少 2 个以上独立来源相互印证；若某条信息搜不到或无法核实，不要编造，"
+            "可在表述中保留「据报」「有说法称」等限定。\n"
+            "3. 当前时间背景为 2026 年：理解为「故事发生在 2026 年左右」即可，"
+            "避免写出具体的日历日期或精确时间（例如「2026年3月12日上午九点」），"
+            "如需提到时间，请用「最近」「这段时间」「不久前」等模糊表达，不要编造具体年月日和几点几分。\n\n"
+            "【输出要求】严格按下列 JSON 结构输出，且只输出 JSON，无额外说明或 Markdown：\n\n"
+            "{\n"
+            '  "title": "视频标题",\n'
+            '  "narration": "旁白文案（约30秒，口语化、搞笑幽默；内容须基于你搜到的客观事实，可含具体数据、时间、人物）",\n'
+            '  "visual_scenes": ["画面要点1", "画面要点2", "画面要点3", "画面要点4", "画面要点5"],\n'
+            '  "bgm_style": "搞笑/反转/悬疑"\n'
+            "}\n\n"
+            "【narration 的用途与写法】\n"
+            "narration 是你输出的「旁白文案」，会原样传递给后续流程，同时用于：① 语音合成（TTS 配音）；② 画面上的字幕。"
+            "因此必须按「适合配音 + 字幕」的写法：用句号、感叹号、问号明确断句，每句长度适中（建议 7～20 字一句），"
+            "便于下游按句切字幕或按字打轴，观众听和看的是同一份文案。\n\n"
+            "字段说明：\n"
+            "  - title：基于该话题与搜索到的最新热梗/讨论角度拟标题，不泄露个人隐私。\n"
+            "  - narration：整段旁白，与 5 个画面要点顺序对应；尽量塞入你搜到的客观事实（数据、时间、人物、结果），保持口语化和幽默感；"
+            "断句清晰、每句不宜过长，以便直接用于配音与字幕。\n"
+            "  - visual_scenes：共 5 条。每条是基于「搜索到的客观事实」提炼出的画面要点/素材点（例如：某场景、某事件瞬间、某数据对应的画面联想），"
+            "    不要求你写完整分镜剧本，具体镜头设计由下游完成；但要点之间要有逻辑顺序（起因→发展→转折或递进），便于后续做成连贯小故事。\n"
+            "  - bgm_style：根据话题情绪选一个风格。\n\n"
+            "请确保返回合法 JSON，字段名为英文，且不在 JSON 外添加任何文字。"
+        )
 
-    user_prompt = (
-        f"当前热点话题：{topic.strip()}。（当前时间：2026年）\n"
-        "请先联网搜索该话题的客观事实、最新动态、数据与热议点，再基于搜索结果填写上述 JSON。"
-        "visual_scenes 共 5 条，每条为基于事实提炼的画面要点。"
-        "narration 将原样用于配音与字幕，请融入具体事实、断句清晰、每句长度适中。时间表述一律用 2026 年。"
-    )
+        user_prompt = (
+            f"当前热点话题：{topic.strip()}。（当前时间：2026年）\n"
+            "请先联网搜索该话题的客观事实、最新动态、数据与热议点，再基于搜索结果填写上述 JSON。"
+            "visual_scenes 共 5 条，每条为基于事实提炼的画面要点。"
+            "narration 将原样用于配音与字幕，请融入具体事实、断句清晰、每句长度适中。时间表述一律用 2026 年。"
+        )
 
     # Kimi 等使用 Ark Responses API（web_search 工具）；豆包使用 Chat Completions API。
     # 为了兼容不同流式事件格式，这里统一使用非流式 Responses 调用，避免解析 SSE 事件。
-    use_responses_api = "kimi" in model_id.lower()
     if use_responses_api:
         try:
             data = _call_ark_responses_with_web_search(
@@ -840,61 +905,42 @@ def optimize_visual_prompt(chinese_scenes_list: List[str], *, temperature: float
     scenes_json = json.dumps(chinese_scenes_list, ensure_ascii=False)
 
     system_prompt = (
-        "You are an expert prompt engineer specialized in dynamic multi‑shot text‑to‑video generation "
-        "for models like Kling and MiniMax Hailuo. Given a list of Chinese short‑video scenes, you must convert each "
-        "scene into a high‑quality English prompt that drives MOVEMENT and CINEMATIC ACTION on screen, "
-        "not static slideshow images.\n\n"
-        "NARRATIVE & LOGIC: Treat the list as one short story. Scenes must connect logically—cause and effect, "
-        "same character journey, or clear before/after. Each shot should feel like a story beat (setup, tension, "
-        "reaction, payoff), not isolated images. Keep continuity in character, place, and mood so the video feels "
-        "like one coherent mini‑narrative.\n\n"
-        "DEPTH & STORY IN EACH SHOT: Every prompt should have a sense of depth and story:\n"
-        "- 立体感 (three‑dimensionality): Describe foreground / mid / background layers, depth of field, "
-        "spatial clarity (where the character is in the room or space), so the frame feels like a real place.\n"
-        "- 故事感 (story feel): The shot should imply a moment in a story—a character doing something with purpose, "
-        "reacting to something, or the environment changing (e.g. light shift, crowd reaction). Use vivid verbs: "
-        "walking, turning, rushing, laughing, spinning, looking back, etc.\n\n"
-        "CAMERA: You MUST use varied, cinematic camera movement. Where it fits the story, prefer:\n"
-        "- Camera orbiting or circling around the character (orbit around subject, arc shot, camera circles the person, "
-        "slow 360 around the character), so the audience feels they are moving around the scene.\n"
-        "- Also use: dolly in/out, push‑in, pull‑back, pan, tilt, handheld, tracking shot, following the character.\n"
-        "Vary shot types across the list: wide establishing, medium, close‑up, over‑the‑shoulder, so the edit feels "
-        "dynamic and the character stays the visual anchor.\n\n"
-        "For each scene, you MUST:\n"
-        "1) Start with a stable visual anchor so the main subject is consistent across shots (e.g. same person "
-        "with brief appearance note, or same location).\n"
-        "2) Describe concrete action, environment and emotion for THIS scene only, with clear depth (layers, space) "
-        "and a story moment (what the character is doing or feeling).\n"
-        "3) Add video‑model‑friendly details: ultra realistic, 4k, dynamic lighting, shallow depth of field, cinematic, "
-        "shot type, camera movement (including orbit/circle around character when it fits), composition, atmosphere.\n"
-        "4) Ensure each prompt implies temporal flow (e.g. \"as the camera orbits around her\", \"while she turns\", "
-        "\"the camera pushes in as he reacts\").\n"
-        "5) Strongly avoid any readable on‑screen text, logos, signs, captions, labels, or text overlays. If the scene "
-        "concept involves text or signage, rewrite it as purely visual, non‑readable elements such as "
-        "\"patches of light and shadow forming abstract symbols\" or \"soft, blurred neon light shapes with no readable text\". "
-        "Only when absolutely necessary, allow a very small amount of large, clean English capital letters (A, B, C) "
-        "with no full words or sentences, and explicitly emphasize: no other text, no random characters, no visual noise.\n"
-        "6) Keep content safe and suitable for mainstream short‑video platforms.\n\n"
-        "FORMAT: Return ONLY a JSON array of strings, one string per input scene, same order. "
-        "Each string at most 512 characters. No extra text or Markdown outside the JSON array."
+        "You are an elite Prompt Engineer specialized in text-to-video models like MiniMax Hailuo and Kling. "
+        "Your task is to translate a JSON array of Chinese trending news headlines and abstract events into a highly optimized JSON array of English video prompts.\n\n"
+        "### CORE OBJECTIVE: VISUAL METAPHORS & B-ROLL\n"
+        "News headlines are abstract. You MUST NOT generate literal newsrooms, news anchors, or screens with text. "
+        "Instead, translate each news item into a concrete, text-free CINEMATIC B-ROLL or VISUAL METAPHOR.\n"
+        "- Example 1 (Crypto/Finance): Instead of 'A report about crypto', generate 'A glowing digital vault absorbing golden holographic coins from a futuristic fiber-optic network, high-tech macro shot.'\n"
+        "- Example 2 (Exam Scores): Instead of 'Scores announced', generate 'Close-up of a nervous student's hands pressing a glowing keyboard in a dark room, cinematic dramatic lighting.'\n"
+        "- Example 3 (Political Talks): Instead of 'Meeting', generate 'Two businessmen in sharp suits shaking hands in silhouette against a massive window overlooking a modern cyberpunk cityscape, slow motion.'\n\n"
+        "### PROMPT FORMULA\n"
+        "Construct EVERY prompt strictly using this flow:\n"
+        "[Camera Movement] + [Concrete Visual Metaphor / Subject] + [Environment & Depth] + [Cinematic Style & Lighting] + [Anti-Gibberish Constraints]\n\n"
+        
+        "### 1. CAMERA & MOVEMENT (Dynamic & Premium)\n"
+        "- Force premium commercial camera movement: 'slow push-in', 'dynamic macro tracking shot', 'drone sweeping over', 'orbit around subject'.\n"
+        "- The movement must match the news tone (e.g., fast and dynamic for sports, slow and tense for politics).\n\n"
+        
+        "### 2. AESTHETICS BY CATEGORY\n"
+        "- Tech/Finance: 'Futuristic, holographic glowing data streams, neon blue and gold lighting, sharp focus, 8k resolution, commercial macro photography.'\n"
+        "- Sports (e.g., Basketball): 'High-contrast stadium lighting, sweat dripping, extreme slow motion, dynamic action, cinematic sports broadcast style.'\n"
+        "- Politics/Economy: 'Serious moody lighting, shallow depth of field, sharp silhouettes, highly professional documentary style.'\n\n"
+        
+        "### 3. ANTI-TEXT & PURITY RULES (STRICT STRICT STRICT)\n"
+        "- ABSOLUTELY NO readable text, signs, logos, chyrons, or captions.\n"
+        "- NO newsroom desks or TV screens displaying text.\n"
+        "- MUST append this exact negative constraint at the end of EVERY prompt: 'clean uncluttered background, devoid of typography, no text overlays, no random symbols, no visual noise, highly detailed.'\n\n"
+        
+        "### OUTPUT FORMAT\n"
+        "- Return ONLY a valid JSON array of strings.\n"
+        "- Exactly one string per input scene, preserving the original order.\n"
+        "- Maximum 512 characters per string.\n"
+        "- NO conversational text, NO explanations, NO Markdown formatting outside the JSON array."
     )
 
     user_prompt = (
-        "下面是一个中文短视频分镜列表，请逐条转化为适合可灵 Kling 和 MiniMax 文生视频的英文 Prompt。\n\n"
-        "要求：\n"
-        "- 场景之间要有明确逻辑与故事线（起因→发展→转折/结果），人物与场景前后统一，像一条完整小故事。\n"
-        "- 每个镜头要有立体感（前景/中景/背景层次、空间关系、景深）和故事感（人物在做什么、情绪或反应、环境变化）。\n"
-        "- 镜头语言要丰富：适当使用「镜头围绕人物转动」（orbit around the character / camera circles the subject / arc shot）"
-        "以及推拉摇移、跟拍等，让画面动起来；景别要有变化（远景、中景、特写等）。\n"
-        "- 尽量避免画面中出现可读的文字、标语、招牌、字幕等；如必须体现这些元素，请改写为「光影斑驳的抽象符号」"
-        "或「模糊的霓虹灯影」，不要写出具体可读的中英文内容。\n"
-        "- 若场景中确实必须出现文字，只允许极少量、简单的英文单个大写字母（如 A、B、C），不要有完整单词或句子，"
-        "并在英文 Prompt 中明确强调：no other text, no random characters, clean, uncluttered background。\n"
-        "- 增强对画面纯净度和整洁感的描述，例如使用「clean, uncluttered background, no random characters, no visual noise」"
-        "等表述，帮助尽量避免乱码和视觉噪点。\n"
-        "- 每条只描述一个分镜，包含：主体、场景与环境、动作、氛围，以及镜头运动与构图。\n"
-        "- 每条英文 Prompt 不超过 512 字符，精简有力；整体风格真实、电影感，适合短视频。\n\n"
-        f"中文分镜列表（JSON 数组）：\n{scenes_json}"
+        "Please strictly follow your system instructions to convert the following Chinese news headlines into English visual-metaphor video prompts.\n\n"
+        f"Input Scenes (JSON Array):\n{scenes_json}"
     )
 
     try:

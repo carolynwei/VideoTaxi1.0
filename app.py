@@ -133,6 +133,61 @@ def load_css() -> None:
         .stMarkdown, .stCaption, .stText, .stSubheader, .stHeader, .stDataFrame {
             color: #e5e7eb !important;
         }
+        .stCaption {
+            font-size: 13px !important;
+            color: #cbd5f5 !important;
+        }
+        label {
+            color: #e5e7eb !important;
+        }
+
+        /* Sidebar 深色化，确保系统状态等文字清晰可见 */
+        [data-testid="stSidebar"] {
+            background:
+                radial-gradient(circle at 0% 0%, #020617 0, #020617 40%, #020617 100%);
+            border-right: 1px solid rgba(15, 23, 42, 0.95);
+        }
+        [data-testid="stSidebar"] * {
+            color: #e5e7eb !important;
+        }
+
+        /* 历史记录等折叠面板改为深色卡片，避免白底浅字 */
+        [data-testid="stExpander"] {
+            background: rgba(15, 23, 42, 0.96);
+            border-radius: 16px !important;
+            border: 1px solid rgba(148, 163, 184, 0.55);
+            box-shadow: 0 16px 40px rgba(15, 23, 42, 0.9);
+        }
+        [data-testid="stExpander"] * {
+            color: #e5e7eb !important;
+        }
+
+        /* 信息提示（登录成功等）深色化 */
+        [data-testid="stAlert"] {
+            background: radial-gradient(circle at 0% 0%, #020617 0, #020617 60%, #020617 100%);
+            border-radius: 14px;
+            border: 1px solid rgba(56, 189, 248, 0.7);
+            box-shadow: 0 14px 32px rgba(15, 23, 42, 0.95);
+        }
+        [data-testid="stAlert"] p {
+            color: #e0f2fe !important;
+        }
+
+        /* 主流程说明区域加强可读性 */
+        .vt-flow-caption {
+            margin-top: 0.2rem;
+            margin-bottom: 0.5rem;
+            font-size: 13px;
+            line-height: 1.6;
+            color: #e0f2fe;
+        }
+        .vt-step1-caption {
+            margin-top: 0.15rem;
+            margin-bottom: 0.4rem;
+            font-size: 13px;
+            line-height: 1.6;
+            color: #e0f2fe;
+        }
 
         /* ---------- 顶部 Hero：videoTaxi 横幅（磨砂玻璃 + 渐变） ---------- */
         .videotaxi-hero {
@@ -194,6 +249,14 @@ def load_css() -> None:
             display: flex;
             flex-direction: column;
             gap: 0.1rem;
+            padding: 0.35rem 0.85rem;
+            border-radius: 16px;
+            background: linear-gradient(
+                120deg,
+                rgba(15, 23, 42, 0.86),
+                rgba(15, 23, 42, 0.72),
+                rgba(15, 23, 42, 0.4)
+            );
         }
 
         .videotaxi-name {
@@ -231,11 +294,11 @@ def load_css() -> None:
 
         .vt-step-title {
             font-size: 15px;
-            font-weight: 600;
-            letter-spacing: 0.04em;
+            font-weight: 700;
+            letter-spacing: 0.12em;
             text-transform: uppercase;
-            color: rgba(148, 163, 184, 0.95);
-            margin-bottom: 0.35rem;
+            color: #e5e7eb;
+            margin-bottom: 0.45rem;
         }
 
         .step-cards {
@@ -289,6 +352,82 @@ def load_css() -> None:
 
         .step-body {
             font-size: 13px;
+            color: #cbd5f5;
+        }
+
+        /* ---------- Sidebar：API Key 安全感面板 ---------- */
+        .api-key-panel {
+            margin-bottom: 0.75rem;
+            padding: 0.9rem 1.0rem 0.8rem;
+            border-radius: 18px;
+            background:
+                linear-gradient(145deg, rgba(15, 23, 42, 0.98), rgba(15, 23, 42, 0.9));
+            border: 1px solid rgba(148, 163, 184, 0.55);
+            box-shadow:
+                0 18px 38px rgba(15, 23, 42, 0.88),
+                0 0 26px rgba(0, 163, 255, 0.28);
+        }
+
+        .api-key-lock-row {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            gap: 0.75rem;
+            margin-bottom: 0.45rem;
+        }
+
+        .api-key-title {
+            font-size: 14px;
+            font-weight: 700;
+            color: #e5e7eb;
+        }
+
+        .api-key-subtitle {
+            margin-top: 0.15rem;
+            font-size: 12px;
+            color: #9ca3af;
+        }
+
+        .api-key-lock-icon {
+            width: 30px;
+            height: 30px;
+            border-radius: 999px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            background: radial-gradient(circle at 30% 0%, #7dd3fc, #0ea5e9 60%, #0369a1 100%);
+            box-shadow:
+                0 0 12px rgba(56, 189, 248, 0.9),
+                0 0 26px rgba(59, 130, 246, 0.9);
+            font-size: 16px;
+        }
+
+        .api-key-meta-row {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 0.4rem;
+            margin-bottom: 0.5rem;
+        }
+
+        .api-key-badge {
+            padding: 0.15rem 0.55rem;
+            border-radius: 999px;
+            font-size: 11px;
+            font-weight: 500;
+            color: #e5e7eb;
+            border: 1px solid rgba(148, 163, 184, 0.7);
+            background: rgba(15, 23, 42, 0.9);
+        }
+
+        .api-key-badge-soft {
+            border-color: rgba(56, 189, 248, 0.9);
+            background: rgba(8, 47, 73, 0.9);
+            color: #e0f2fe;
+        }
+
+        .api-key-hint {
+            font-size: 11px;
+            line-height: 1.5;
             color: #9ca3af;
         }
 
@@ -402,10 +541,79 @@ def load_css() -> None:
         }
 
         .stDataFrame {
+            background: transparent;
+        }
+
+        .vt-hot-table {
+            padding: 0.75rem 0.85rem 0.6rem;
+            border-radius: 18px;
+            background:
+                linear-gradient(135deg, rgba(15, 23, 42, 0.98), rgba(15, 23, 42, 0.9));
+            border: 1px solid rgba(55, 65, 81, 0.95);
+            box-shadow:
+                0 18px 40px rgba(15, 23, 42, 0.95),
+                0 0 26px rgba(56, 189, 248, 0.28);
+        }
+
+        .vt-hot-table-header {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            margin-bottom: 0.4rem;
+        }
+
+        .vt-hot-table-title {
+            font-size: 14px;
+            font-weight: 600;
+            color: #e5e7eb;
+        }
+
+        .vt-hot-table-pill {
+            padding: 0.1rem 0.55rem;
+            border-radius: 999px;
+            font-size: 11px;
+            color: #e0f2fe;
+            border: 1px solid rgba(56, 189, 248, 0.8);
+            background: rgba(15, 23, 42, 0.96);
+        }
+
+        .vt-hot-table [data-testid="stDataFrame"] {
+            background: transparent;
+        }
+
+        .vt-hot-table table {
+            border-collapse: collapse;
+            width: 100%;
+            font-size: 13px;
+        }
+
+        .vt-hot-table thead tr {
+            background: rgba(15, 23, 42, 0.98);
+        }
+
+        .vt-hot-table thead th {
+            border-bottom: 1px solid rgba(75, 85, 99, 0.9);
+            padding: 0.45rem 0.5rem;
+            color: #e5e7eb;
+            font-weight: 600;
+        }
+
+        .vt-hot-table tbody tr {
+            background: rgba(15, 23, 42, 0.96);
+        }
+
+        .vt-hot-table tbody tr:nth-child(even) {
             background: rgba(15, 23, 42, 0.9);
-            border-radius: 12px;
-            border: 1px solid rgba(55, 65, 81, 0.85);
-            box-shadow: 0 18px 40px rgba(15, 23, 42, 0.9);
+        }
+
+        .vt-hot-table tbody td {
+            padding: 0.4rem 0.5rem;
+            border-bottom: 1px solid rgba(31, 41, 55, 0.85);
+            color: #e5e7eb;
+        }
+
+        .vt-hot-table tbody tr:hover {
+            background: rgba(15, 23, 42, 0.98);
         }
 
         /* ---------- 动画 ---------- */
@@ -590,7 +798,27 @@ def main() -> None:
 
     # Sidebar: API Keys + 系统状态
     with st.sidebar:
-        st.header("① 填写 API Keys（必填）")
+        st.markdown(
+            """
+            <div class="api-key-panel">
+              <div class="api-key-lock-row">
+                <div>
+                  <div class="api-key-title">① 填写 API Keys（必填）</div>
+                  <div class="api-key-subtitle">只用于直连官方大模型接口，本地可见，随时可删。</div>
+                </div>
+                <div class="api-key-lock-icon">🔒</div>
+              </div>
+              <div class="api-key-meta-row">
+                <span class="api-key-badge">本地运行</span>
+                <span class="api-key-badge api-key-badge-soft">请在信任当前环境时填写</span>
+              </div>
+              <div class="api-key-hint">
+                建议先用测试额度体验，确认流程无误后，再换成正式生产 Key。
+              </div>
+            </div>
+            """,
+            unsafe_allow_html=True,
+        )
         st.caption(
             "至少要填 Doubao + DeepSeek + 一个视频生成 Key，系统才能完整跑完一键生成流程。"
         )
@@ -658,15 +886,25 @@ def main() -> None:
         )
 
     # ---------- 主页面：两步流程 ----------
-    st.caption(
-        "整套流程只有两步：① 先从抖音热榜里选一个话题；② 再点下面的「开始一键生成」，中间所有步骤系统会自动完成。"
+    st.markdown(
+        """
+        <div class="vt-flow-caption">
+          整套流程只有两步：① 先从抖音热榜里选一个话题；② 再点下面的「开始一键生成」，中间所有步骤系统会自动完成。
+        </div>
+        """,
+        unsafe_allow_html=True,
     )
     st.markdown("---")
 
     # ---------- 步骤 1：选择热点话题 ----------
     st.subheader("① 选择热点话题（必做）")
-    st.caption(
-        "先点左侧按钮「获取今日抖音热榜」，再在表格中点选一条你感兴趣的话题，不会选就用排在最前面的一条。"
+    st.markdown(
+        """
+        <div class="vt-step1-caption">
+          先点左侧按钮「获取今日抖音热榜」，再在表格中点选一条你感兴趣的话题，不会选就用排在最前面的一条。
+        </div>
+        """,
+        unsafe_allow_html=True,
     )
     col_controls, col_table = st.columns([1, 2], gap="large")
 
@@ -690,8 +928,20 @@ def main() -> None:
         if not hot_trends:
             st.info("👆 点击「获取今日抖音热榜」，再在下方选择一条话题。")
         else:
+            st.markdown(
+                """
+                <div class="vt-hot-table">
+                  <div class="vt-hot-table-header">
+                    <div class="vt-hot-table-title">今日抖音热榜</div>
+                    <span class="vt-hot-table-pill">在列表中点选一个话题</span>
+                  </div>
+                """,
+                unsafe_allow_html=True,
+            )
             df = pd.DataFrame(hot_trends)
             st.dataframe(df, width="stretch", hide_index=True)
+            st.markdown("</div>", unsafe_allow_html=True)
+
             titles = [item.get("title", "") for item in hot_trends]
             if titles:
                 selected_title = st.selectbox(
