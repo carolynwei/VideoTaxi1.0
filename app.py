@@ -1485,14 +1485,15 @@ def main() -> None:
                     st.write(p)
 
     with col_video:
-        st.markdown("**成片预览与下载**")
+        st.markdown("**🎬 成片预览与下载（含旁白、字幕与可选 BGM）**")
         if final_video_path_str and Path(final_video_path_str).is_file():
             video_path_obj = Path(final_video_path_str)
             with video_path_obj.open("rb") as f:
                 video_bytes = f.read()
             st.video(video_bytes)
+            st.caption("若想保存到本地，请点击下方按钮下载 MP4 文件。")
             st.download_button(
-                "下载 MP4",
+                "⬇ 下载最终成片 MP4",
                 data=video_bytes,
                 file_name=video_path_obj.name,
                 mime="video/mp4",
