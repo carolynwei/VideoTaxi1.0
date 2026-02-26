@@ -2,7 +2,7 @@ streamlit>=1.40.0
 requests>=2.32.0
 pandas>=2.2.0
 python-dotenv>=1.0.1
-moviepy>=1.0.3
+moviepy==1.0.3
 PyJWT>=2.0.0
 websocket-client>=1.6.0
 exa-py>=1.0.0
