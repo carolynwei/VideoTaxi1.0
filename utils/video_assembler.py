@@ -178,8 +178,8 @@ def _make_subtitles_clip(
         default_font = project_root / "font.ttf"
         subtitle_font = str(default_font) if default_font.is_file() else "SimHei"
 
-    # 优先使用 PIL 直接渲染字幕（不依赖 ImageMagick），确保中文可见
-    def _text_clip_pil(txt: str) -> ImageClip:
+    # 优先使用 PIL 直接渲染字幕（不依赖 ImageMagick），确保中文可见，并在单行过长时自动换行
+    def _text_clip_pil(txt: str):
         width = int(round(float(base_video.w) * 0.9))
         if ImageFont is None or Image is None or ImageDraw is None or ImageClip is None:
             raise RuntimeError("PIL 或 ImageClip 不可用")
@@ -189,10 +189,53 @@ def _make_subtitles_clip(
         except Exception:
             font = ImageFont.load_default()
 
-        # 计算文本包围盒
-        dummy_img = Image.new("RGBA", (width, 1000), (0, 0, 0, 0))
+        # 先在虚拟画布上根据最大宽度做自动换行，避免长句被截断
+        max_text_width = max(1, width - 80)
+        dummy_img = Image.new("RGBA", (width, 1000))
         draw = ImageDraw.Draw(dummy_img)
-        bbox = draw.multiline_textbbox((0, 0), txt, font=font, align="center")
+
+        def _wrap_text_for_width(raw_text: str) -> str:
+            """
+            按像素宽度自动换行：
+            - 保留原有换行符
+            - 对中文/英文混排逐字符试探，超出宽度则换行
+            """
+            if not raw_text:
+                return ""
+
+            lines = []
+            current = ""
+
+            for ch in raw_text:
+                # 手动换行符，直接断行
+                if ch == "\n":
+                    lines.append(current)
+                    current = ""
+                    continue
+
+                test = current + ch
+                bbox_line = draw.textbbox((0, 0), test, font=font)
+                line_w = bbox_line[2] - bbox_line[0]
+
+                # 超出最大宽度，则当前行收尾，开启新行
+                if line_w > max_text_width and current:
+                    lines.append(current)
+                    # 开头若是空格就丢弃，避免新行首空格
+                    current = ch if ch != " " else ""
+                else:
+                    current = test
+
+            if current:
+                lines.append(current)
+
+            return "\n".join(lines)
+
+        wrapped_txt = _wrap_text_for_width(txt)
+        if not wrapped_txt:
+            wrapped_txt = txt
+
+        # 计算包围盒
+        bbox = draw.multiline_textbbox((0, 0), wrapped_txt, font=font, align="center")
         text_w = max(1, int(bbox[2] - bbox[0]))
         text_h = max(1, int(bbox[3] - bbox[1]))
 
@@ -200,14 +243,14 @@ def _make_subtitles_clip(
         img_h = int(text_h + 60)
 
         # 半透明黑底
-        img = Image.new("RGBA", (img_w, img_h), (0, 0, 0, int(0.6 * 255)))
+        img = Image.new("RGBA", (img_w, img_h))
         draw = ImageDraw.Draw(img)
         # 居中绘制白字+黑描边
         x = (img_w - text_w) // 2 - bbox[0]
         y = (img_h - text_h) // 2 - bbox[1]
         draw.multiline_text(
             (x, y),
-            txt,
+            wrapped_txt,
             font=font,
             fill=(255, 255, 255, 255),
             stroke_width=3,
@@ -253,6 +296,7 @@ def assemble_final_video(
     *,
     timestamps: Optional[Dict[str, Any]] = None,
     bgm_path: Optional[str] = None,
+    target_aspect: Optional[str] = None,
 ) -> str:
     """
     将下载好的可灵视频与火山 TTS 音频合成最终成片，并叠加字幕；可选混入 BGM。
@@ -329,6 +373,39 @@ def assemble_final_video(
         # 暂时只保留 TTS 旁白，不混可灵环境音，避免复合音轨出错
         mixed_audio = None
         base_video = base_video.set_audio(audio)
+
+        # 按需裁剪成目标画面比例（例如 9:16 / 16:9 / 1:1 等），优先保证人物不被严重裁掉：
+        # - 若源视频更宽，则左右居中裁掉多余宽度；
+        # - 若源视频更窄/更高，则上下居中裁掉多余高度。
+        if target_aspect:
+            try:
+                parts = str(target_aspect).strip().split(":")
+                if len(parts) == 2:
+                    aw = float(parts[0])
+                    ah = float(parts[1])
+                    if aw > 0 and ah > 0:
+                        target_ratio = aw / ah
+                        vw = float(base_video.w)
+                        vh = float(base_video.h)
+                        if vw > 0 and vh > 0:
+                            src_ratio = vw / vh
+                            if abs(src_ratio - target_ratio) > 1e-3:
+                                # 源更宽：裁掉左右；源更窄/更高：裁掉上下
+                                if src_ratio > target_ratio:
+                                    new_w = int(round(vh * target_ratio))
+                                    new_w = max(1, min(int(vw), new_w))
+                                    x1 = max(0, int((vw - new_w) / 2))
+                                    x2 = x1 + new_w
+                                    base_video = base_video.crop(x1=x1, x2=x2)
+                                else:
+                                    new_h = int(round(vw / target_ratio))
+                                    new_h = max(1, min(int(vh), new_h))
+                                    y1 = max(0, int((vh - new_h) / 2))
+                                    y2 = y1 + new_h
+                                    base_video = base_video.crop(y1=y1, y2=y2)
+            except Exception:
+                # 比例解析或裁剪异常时忽略，继续用原始画面比例
+                pass
 
         # 可选：叠加 BGM（洗脑神曲等）作背景，音量压低
         target_duration = float(base_video.duration or 0.0)
